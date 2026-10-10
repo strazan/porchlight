@@ -22,6 +22,9 @@ public actor RelayClient {
 
     private var inflight: [String: Task<Void, Never>] = [:]
     private var socket: URLSessionWebSocketTask?
+    private var backoff = 1.0
+    private var backoffWait: Task<Void, Never>?
+    private var skipNextWait = false
     private var lastPong = Date()
     private let debug = ProcessInfo.processInfo.environment["PORCHLIGHT_DEBUG"] != nil
 
@@ -76,8 +79,17 @@ public actor RelayClient {
         socket?.cancel(with: .normalClosure, reason: nil)
     }
 
+    /// Drops the current connection (if any) and connects again right away, without
+    /// waiting out a backoff. For when the network changes or the Mac wakes up: the old
+    /// socket is probably dead, and waiting for the keepalive to notice takes up to a minute.
+    public func reconnectNow() {
+        backoff = 1
+        skipNextWait = socket != nil
+        socket?.cancel(with: .goingAway, reason: nil)
+        backoffWait?.cancel()
+    }
+
     private func loop() async {
-        var backoff = 1.0
         while !Task.isCancelled {
             onStatus(.connecting)
             let attemptStarted = Date()
@@ -91,8 +103,16 @@ public actor RelayClient {
             inflight.removeAll()
             // A connection that stayed up for a while was healthy; start over with short waits.
             if Date().timeIntervalSince(attemptStarted) > 60 { backoff = 1 }
-            try? await Task.sleep(for: .seconds(backoff * Double.random(in: 0.8...1.2)))
+            if skipNextWait {
+                skipNextWait = false
+                continue
+            }
+            let delay = backoff * Double.random(in: 0.8...1.2)
             backoff = min(backoff * 2, 30)
+            let wait = Task { _ = try? await Task.sleep(for: .seconds(delay)) }
+            backoffWait = wait
+            await wait.value
+            backoffWait = nil
         }
     }
 

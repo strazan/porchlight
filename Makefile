@@ -1,11 +1,15 @@
-.PHONY: test test-relay test-app build-cli app dev
+.PHONY: test test-relay test-app build-cli app dev relay-bundle
 
 DERIVED_DATA := app/build
 
 test: test-relay test-app
 
 test-relay:
-	cd relay && npm test && npx tsc --noEmit
+	cd relay && npm test && npx tsc --noEmit && node scripts/bundle.mjs --check
+
+# The relay the app deploys: rebuild after changing relay/.
+relay-bundle:
+	cd relay && npm run bundle
 
 test-app:
 	cd app/PorchlightCore && swift test

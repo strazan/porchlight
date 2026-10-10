@@ -1,0 +1,11 @@
+{
+  "main_module": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": [
+    "global_fetch_strictly_public"
+  ],
+  "durable_object_classes": [
+    "Hub"
+  ],
+  "sha256": "79c098fd8dd3212c562cb5c0fe6e556e76052cd299593a43ced08b042a3e3edf"
+}

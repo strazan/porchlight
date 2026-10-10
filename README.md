@@ -61,6 +61,13 @@ AGENT_SECRET=dev-secret-change-me
 
 ## Deploy your own relay
 
+**From the app:** Settings → Relay → **Deploy to Cloudflare…** The wizard opens a
+pre-filled Cloudflare API token page (Workers Scripts and Workers KV, edit), then
+creates everything and connects Porchlight to the new relay. The token stays in your
+Keychain so Porchlight can update the relay when a new version ships with the app.
+
+**By hand, with wrangler:**
+
 ```sh
 cd relay
 npx wrangler login
@@ -68,8 +75,10 @@ openssl rand -hex 32 | npx wrangler secret put AGENT_SECRET   # shared with your
 npx wrangler deploy                                           # also creates the OAUTH_KV namespace
 ```
 
-In Porchlight's Settings → Relay, enter `https://porchlight-relay.<you>.workers.dev` and
-your `AGENT_SECRET`. Then add `https://porchlight-relay.<you>.workers.dev/mcp` as a custom
+Then enter `https://porchlight-relay.<you>.workers.dev` and your `AGENT_SECRET` in
+Settings → Relay.
+
+**Connecting apps:** add `https://porchlight-relay.<you>.workers.dev/mcp` as a custom
 connector in Claude, ChatGPT or any MCP client that supports OAuth. When it connects,
 your browser shows a code and Porchlight asks you to approve the app with the same code.
 Apps you've approved are listed under Settings → Apps, where you can revoke them.
@@ -100,13 +109,14 @@ and keepalive pings are answered without waking it.
 - [x] **M0**: relay + CLI host, one stdio server, end to end
 - [x] **M1**: OAuth 2.1 at the relay, where you approve new clients on your Mac
 - [x] **M2**: menubar app: manage servers, import from Claude Desktop/Claude Code/Cursor configs, one combined endpoint plus one per server
-- [ ] **M3**: one-click deploy to your Cloudflare account from the app, Keychain, launch at login
+- [x] **M3**: one-click deploy to your Cloudflare account from the app, launch at login, reconnect on wake and network changes
 - [ ] **M4**: per-tool policies (allow / ask / deny), approvals, activity log, revoke clients
 - [ ] **M5**: signed releases, Homebrew cask, self-hosted relay (Docker)
 
 ## Development
 
 ```sh
-make test        # relay (vitest in workerd) + PorchlightCore (Swift Testing)
-make app         # build and open the menubar app
+make test          # relay (vitest in workerd) + PorchlightCore (Swift Testing)
+make app           # build and open the menubar app
+make relay-bundle  # after changing relay/: rebuild the relay the app deploys
 ```

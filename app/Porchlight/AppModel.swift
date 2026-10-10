@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import PorchlightCore
+import Security
 
 struct LogLine: Identifiable {
     let id: Int
@@ -20,6 +21,33 @@ final class AppModel {
 
     var relayURL: String { didSet { defaults.set(relayURL, forKey: "relayURL") } }
     var secret: String { didSet { Keychain.write("agentSecret", secret) } }
+    var keepAwake: Bool {
+        didSet {
+            defaults.set(keepAwake, forKey: "keepAwake")
+            power.hold(keepAwake && isOn)
+        }
+    }
+
+    /// Set once the app has deployed the relay itself.
+    private(set) var deployment: Deployment? {
+        didSet { defaults.set(try? JSONEncoder().encode(deployment), forKey: "deployment") }
+    }
+
+    struct Deployment: Codable, Equatable {
+        var accountID: String
+        var accountName: String
+        var scriptName: String
+        /// The relay build that's deployed, from its bundle manifest.
+        var relaySHA: String
+    }
+
+    /// The relay build that ships with this version of the app.
+    @ObservationIgnored let bundledRelay = try? RelayBundle(bundle: .main)
+
+    var relayUpdateAvailable: Bool {
+        guard let deployment, let bundledRelay else { return false }
+        return deployment.relaySHA != bundledRelay.sha256
+    }
 
     private(set) var servers: [ServerConfig] = []
     private(set) var serverStatus: [String: StdioUpstream.Status] = [:]
@@ -36,6 +64,8 @@ final class AppModel {
     @ObservationIgnored private var router: Router?
     @ObservationIgnored private var client: RelayClient?
     @ObservationIgnored private lazy var pairingPanel = PairingPanel(model: self)
+    @ObservationIgnored private let power = PowerAssertion()
+    @ObservationIgnored private var connectivity: ConnectivityWatcher?
     /// The relay forgets a pairing after this long (its consent page expires).
     private static let pairingLifetime: Duration = .seconds(10 * 60)
     @ObservationIgnored private var nextLogID = 0
@@ -44,7 +74,10 @@ final class AppModel {
     init() {
         relayURL = defaults.string(forKey: "relayURL") ?? "http://localhost:8787"
         secret = Keychain.read("agentSecret") ?? ""
+        keepAwake = defaults.bool(forKey: "keepAwake")
+        deployment = defaults.data(forKey: "deployment").flatMap { try? JSONDecoder().decode(Deployment.self, from: $0) }
         servers = store.load() ?? migrateSingleServer()
+        connectivity = ConnectivityWatcher { [weak self] in self?.connectivityChanged() }
         if isConfigured { Task { await start() } }
     }
 
@@ -200,6 +233,7 @@ final class AppModel {
         self.router = router
         self.client = client
         runner = Task { await client.run() }
+        power.hold(keepAwake)
         log("Connecting to \(relayURL)")
     }
 
@@ -213,6 +247,7 @@ final class AppModel {
         pendingPairings = []
         clients = []
         pairingPanel.update()
+        power.hold(false)
         if state != .off { log("Stopped") }
         state = .off
     }
@@ -224,6 +259,56 @@ final class AppModel {
 
     func clearLogs() {
         logs.removeAll()
+    }
+
+    private func connectivityChanged() {
+        guard let client else { return }
+        log("Network changed or Mac woke up; reconnecting")
+        Task { await client.reconnectNow() }
+    }
+
+    // MARK: Deploying the relay
+
+    /// Deploys the relay to a Cloudflare account and connects to it. A first deploy gets a
+    /// fresh secret; redeploying to the same place keeps the current one.
+    func deploy(
+        token: String,
+        account: CloudflareAPI.Account,
+        progress: @escaping @Sendable (RelayDeployer.Step) -> Void
+    ) async throws -> URL {
+        guard let bundledRelay else { throw DeployError.bundleMissing }
+        let sameTarget = deployment?.accountID == account.id
+        let agentSecret = sameTarget && !secret.isEmpty ? secret : Self.newSecret()
+        let scriptName = deployment?.scriptName ?? RelayDeployer.defaultScriptName
+        let deployer = RelayDeployer(api: CloudflareAPI(token: token), bundle: bundledRelay)
+        log("Deploying the relay to \(account.name)…")
+        let url = try await deployer.deploy(account: account.id, scriptName: scriptName, agentSecret: agentSecret, progress: progress)
+
+        Keychain.write("cloudflareToken", token)
+        deployment = Deployment(accountID: account.id, accountName: account.name, scriptName: scriptName, relaySHA: bundledRelay.sha256)
+        relayURL = url.absoluteString
+        if agentSecret != secret { secret = agentSecret }
+        log("Relay deployed at \(url.absoluteString)")
+        restart()
+        return url
+    }
+
+    /// Redeploys the relay that ships with this app, with the saved token.
+    func updateRelay(progress: @escaping @Sendable (RelayDeployer.Step) -> Void) async throws {
+        guard let deployment, let token = Keychain.read("cloudflareToken") else { throw UpdateError.notDeployedByApp }
+        _ = try await deploy(token: token, account: .init(id: deployment.accountID, name: deployment.accountName), progress: progress)
+    }
+
+    enum UpdateError: LocalizedError {
+        case notDeployedByApp
+
+        var errorDescription: String? { "Deploy the relay from Porchlight first." }
+    }
+
+    static func newSecret() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return bytes.map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: Pairing and clients

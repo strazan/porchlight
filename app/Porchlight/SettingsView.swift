@@ -7,6 +7,7 @@ struct SettingsView: View {
             ServersTab().tabItem { Label("Servers", systemImage: "server.rack") }
             ClientsTab().tabItem { Label("Apps", systemImage: "app.connected.to.app.below.fill") }
             RelayTab().tabItem { Label("Relay", systemImage: "network") }
+            GeneralTab().tabItem { Label("General", systemImage: "gearshape") }
         }
         .frame(width: 600, height: 460)
     }
@@ -170,39 +171,132 @@ private struct RelayTab: View {
     @Environment(AppModel.self) private var model
     @State private var relayURL = ""
     @State private var secret = ""
+    @State private var deploying = false
+    @State private var updateStep: RelayDeployer.Step?
+    @State private var updateError: String?
 
     var body: some View {
         Form {
             Section {
+                if let deployment = model.deployment {
+                    LabeledContent("Deployed to", value: deployment.accountName)
+                    if model.relayUpdateAvailable {
+                        HStack {
+                            Text(updateStep?.title ?? "A newer relay comes with this version of Porchlight.")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Update Relay") { update() }
+                                .disabled(updateStep != nil)
+                        }
+                    } else {
+                        Text("The relay is up to date.").foregroundStyle(.secondary)
+                    }
+                    if let updateError {
+                        Text(updateError).foregroundStyle(.red).font(.callout)
+                    }
+                    Button("Deploy Again…") { deploying = true }
+                } else {
+                    HStack {
+                        Text("Run your relay in your own Cloudflare account. It takes about a minute and fits in the free plan.")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Deploy to Cloudflare…") { deploying = true }
+                            .buttonStyle(.borderedProminent)
+                    }
+                }
+            } header: {
+                Text("Cloudflare")
+            }
+
+            Section {
                 TextField("URL", text: $relayURL, prompt: Text("https://porchlight-relay.you.workers.dev"))
                 SecureField("Secret", text: $secret, prompt: Text("AGENT_SECRET"))
+                HStack {
+                    Spacer()
+                    Button("Save & Reconnect") { save() }
+                        .disabled(relayURL.isEmpty || secret.isEmpty || !changed)
+                }
+            } header: {
+                Text("Connection")
             } footer: {
-                Text("The relay you deployed to Cloudflare, and the AGENT_SECRET you gave it.")
+                Text("Filled in for you when Porchlight deploys the relay. For a relay you deployed yourself, enter its URL and AGENT_SECRET.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .safeAreaInset(edge: .bottom) {
-            HStack {
-                Spacer()
-                Button("Save & Reconnect") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(relayURL.isEmpty || secret.isEmpty || !changed)
-            }
-            .padding()
-        }
-        .onAppear {
-            relayURL = model.relayURL
-            secret = model.secret
-        }
+        .onAppear(perform: load)
+        .onChange(of: model.relayURL) { load() }
+        .sheet(isPresented: $deploying) { DeployView() }
     }
 
     private var changed: Bool { relayURL != model.relayURL || secret != model.secret || !model.isOn }
+
+    private func load() {
+        relayURL = model.relayURL
+        secret = model.secret
+    }
 
     private func save() {
         model.relayURL = relayURL
         if secret != model.secret { model.secret = secret }
         model.restart()
+    }
+
+    private func update() {
+        updateError = nil
+        updateStep = .subdomain
+        Task {
+            do {
+                try await model.updateRelay { step in
+                    Task { @MainActor in updateStep = step }
+                }
+            } catch {
+                updateError = error.localizedDescription
+            }
+            updateStep = nil
+        }
+    }
+}
+
+// MARK: - General
+
+private struct GeneralTab: View {
+    @Environment(AppModel.self) private var model
+    @State private var launchAtLogin = LoginItem.isEnabled
+    @State private var loginItemError: String?
+
+    var body: some View {
+        @Bindable var model = model
+        Form {
+            Section {
+                Toggle("Open Porchlight at login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _, enabled in
+                        do {
+                            try LoginItem.set(enabled)
+                            loginItemError = nil
+                        } catch {
+                            loginItemError = error.localizedDescription
+                            launchAtLogin = LoginItem.isEnabled
+                        }
+                    }
+                if LoginItem.needsApproval {
+                    Text("Allow Porchlight in System Settings → General → Login Items.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                if let loginItemError {
+                    Text(loginItemError).font(.caption).foregroundStyle(.red)
+                }
+            }
+            Section {
+                Toggle("Keep this Mac awake while Porchlight is on", isOn: $model.keepAwake)
+            } footer: {
+                Text("Cloud apps can only reach your servers while your Mac is awake. Closing the lid still puts it to sleep.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
