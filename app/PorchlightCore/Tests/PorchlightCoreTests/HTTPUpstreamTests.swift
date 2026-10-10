@@ -28,7 +28,9 @@ final class FakeHTTPServer: @unchecked Sendable {
 }
 
 func httpConfig(_ name: String, url: URL, key: String = "test-key") -> ServerConfig {
-    ServerConfig(name: name, url: url.absoluteString, headers: ["Authorization": "Bearer \(key)"])
+    var config = ServerConfig(name: name, url: url.absoluteString, headers: ["Authorization": "Bearer \(key)"])
+    config.toolPolicy = ToolPolicy(defaultPermission: .allowAll)
+    return config
 }
 
 @Suite struct HTTPUpstreamTests {
@@ -119,7 +121,13 @@ func httpConfig(_ name: String, url: URL, key: String = "test-key") -> ServerCon
     @Test func probesAConfigBeforeSaving() async throws {
         let server = try FakeHTTPServer()
         let good = await Router.probe(httpConfig("obsidian", url: server.url), environment: [:])
-        #expect(good == .success(.init(serverName: "fake-http", toolCount: 1)))
+        guard case .success(let found) = good else {
+            Issue.record("expected the probe to succeed, got \(good)")
+            return
+        }
+        #expect(found.serverName == "fake-http")
+        #expect(found.tools.map(\.name) == ["search"])
+        #expect(found.tools.first?.readOnly == false)
 
         guard case .failure(let error) = await Router.probe(httpConfig("obsidian", url: server.url, key: "nope"), environment: [:]) else {
             Issue.record("expected the wrong key to fail")

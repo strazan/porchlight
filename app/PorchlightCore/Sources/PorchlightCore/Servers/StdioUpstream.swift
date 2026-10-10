@@ -107,7 +107,11 @@ public actor StdioUpstream: Upstream {
         log("started: \(command.joined(separator: " "))")
         Task {
             for await message in child.messages { await self.route(message) }
-            self.exited(child)
+            // Answer waiters as soon as output ends; the exit status can take a moment longer.
+            guard self.outputEnded(child) else { return }
+            let exitStatus = await child.exitStatus()
+            // Unless it has been restarted meanwhile, say how it ended.
+            if self.status == .failed("Exited") { self.status = .failed("Exited with status \(exitStatus)") }
         }
 
         let response = await send(.object([
@@ -189,16 +193,20 @@ public actor StdioUpstream: Upstream {
         }
     }
 
-    private func exited(_ child: StdioProcess) {
-        guard process === child else { return }
+    /// The child stopped writing: it's gone (or as good as). Returns whether it was the current one.
+    private func outputEnded(_ child: StdioProcess) -> Bool {
+        guard process === child else { return false }
         process = nil
         initializeResult = nil
         for continuation in pending.values {
             continuation.resume(returning: .rpcError(id: nil, code: -32603, message: "\(name) exited"))
         }
         pending.removeAll()
-        if !stopping { status = .failed("Exited with status \(child.exitStatus)") }
+        child.terminate()
+        if !stopping { status = .failed("Exited") }
+        return true
     }
+
 }
 
 enum UpstreamError: LocalizedError {

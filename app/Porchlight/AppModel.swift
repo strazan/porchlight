@@ -57,6 +57,10 @@ final class AppModel {
     private(set) var pendingPairings: [PairingRequest] = []
     /// Apps that have been granted access through the relay.
     private(set) var clients: [PairedClient] = []
+    /// Tool calls waiting for the owner to allow or deny them, oldest first.
+    private(set) var pendingApprovals: [ToolApprovalRequest] = []
+    /// Recent requests, oldest first.
+    private(set) var activity: [ActivityEvent] = []
 
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private let store = ServerStore.standard
@@ -64,7 +68,11 @@ final class AppModel {
     @ObservationIgnored private var router: Router?
     @ObservationIgnored private var shellEnvironment: [String: String]?
     @ObservationIgnored private var client: RelayClient?
-    @ObservationIgnored private lazy var pairingPanel = PairingPanel(model: self)
+    @ObservationIgnored private lazy var promptPanel = PromptPanel(model: self)
+    @ObservationIgnored private var approvalWaiters: [UUID: CheckedContinuation<ToolApproval, Never>] = [:]
+    /// Unanswered tool approvals are declined after this long.
+    private static let approvalTimeout: Duration = .seconds(120)
+    private static let maxActivity = 500
     @ObservationIgnored private let power = PowerAssertion()
     @ObservationIgnored private var connectivity: ConnectivityWatcher?
     /// The relay forgets a pairing after this long (its consent page expires).
@@ -228,6 +236,12 @@ final class AppModel {
             },
             onStatus: { [weak self] server, status in
                 Task { @MainActor in self?.serverStatus[server] = status }
+            },
+            approve: { [weak self] request in
+                await self?.requestApproval(request) ?? .deny
+            },
+            onActivity: { [weak self] event in
+                Task { @MainActor in self?.recordActivity(event) }
             }
         )
         await router.apply(servers)
@@ -260,7 +274,8 @@ final class AppModel {
         serverStatus = [:]
         pendingPairings = []
         clients = []
-        pairingPanel.update()
+        for request in pendingApprovals { answer(request, with: .deny) }
+        promptPanel.update()
         power.hold(false)
         if state != .off { log("Stopped") }
         state = .off
@@ -325,11 +340,54 @@ final class AppModel {
         return bytes.map { String(format: "%02x", $0) }.joined()
     }
 
+    // MARK: Tool approvals and activity
+
+    private func requestApproval(_ request: ToolApprovalRequest) async -> ToolApproval {
+        await withCheckedContinuation { continuation in
+            approvalWaiters[request.id] = continuation
+            pendingApprovals.append(request)
+            log("\(request.clientName) wants to run \(request.tool) on \(request.server)")
+            promptPanel.update(bringToFront: true)
+            Task {
+                try? await Task.sleep(for: Self.approvalTimeout)
+                if approvalWaiters[request.id] != nil {
+                    log("No answer about \(request.tool) in time; declined")
+                    answer(request, with: .deny)
+                }
+            }
+        }
+    }
+
+    func answer(_ request: ToolApprovalRequest, with approval: ToolApproval) {
+        guard let waiter = approvalWaiters.removeValue(forKey: request.id) else { return }
+        pendingApprovals.removeAll { $0.id == request.id }
+        if approval == .allowAlways, var server = servers.first(where: { $0.name == request.server }) {
+            server.toolPolicy.overrides[request.tool] = .allow
+            update(server)
+            log("Always allowing \(request.tool) on \(request.server)")
+        }
+        waiter.resume(returning: approval)
+        promptPanel.update()
+    }
+
+    func showPendingPrompt() {
+        promptPanel.update(bringToFront: true)
+    }
+
+    private func recordActivity(_ event: ActivityEvent) {
+        activity.append(event)
+        if activity.count > Self.maxActivity { activity.removeFirst(activity.count - Self.maxActivity) }
+    }
+
+    func clearActivity() {
+        activity.removeAll()
+    }
+
     // MARK: Pairing and clients
 
     func decide(_ request: PairingRequest, allow: Bool) {
         pendingPairings.removeAll { $0.id == request.id }
-        pairingPanel.update()
+        promptPanel.update()
         log("\(allow ? "Approved" : "Declined") \(request.clientName)")
         guard let client else { return }
         Task { await client.decidePairing(request.id, allow: allow) }
@@ -341,21 +399,17 @@ final class AppModel {
         Task { await client.revokeClient(paired.id) }
     }
 
-    func showPendingPairing() {
-        pairingPanel.update(bringToFront: true)
-    }
-
     private func relayEvent(_ event: RelayEvent) {
         switch event {
         case .pairingRequested(let request):
             guard !pendingPairings.contains(where: { $0.id == request.id }) else { return }
             pendingPairings.append(request)
             log("\(request.clientName) wants to connect (code \(request.formattedCode))")
-            pairingPanel.update(bringToFront: true)
+            promptPanel.update(bringToFront: true)
             Task {
                 try? await Task.sleep(for: Self.pairingLifetime)
                 pendingPairings.removeAll { $0.id == request.id }
-                pairingPanel.update()
+                promptPanel.update()
             }
         case .clientsChanged(let clients):
             self.clients = clients.sorted { $0.createdAt > $1.createdAt }

@@ -52,7 +52,8 @@ for line in sys.stdin:
                     "capabilities": {"tools": {}, "prompts": {}, "resources": {}},
                     "serverInfo": {"name": NAME, "version": "1"}})
     elif method == "tools/list":
-        result(id, {"tools": [{"name": "echo", "inputSchema": {"type": "object"}}]})
+        result(id, {"tools": [{"name": "echo", "inputSchema": {"type": "object"},
+                               "annotations": {"readOnlyHint": True}}]})
     elif method == "tools/call":
         name = params.get("name")
         if name == "echo":

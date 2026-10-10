@@ -73,6 +73,9 @@ const { tools } = await all.listTools();
 log(`${tools.length} tools, e.g.`, tools.slice(0, 2).map((t) => t.name).join(", "));
 const sum = await all.callTool({ name: "everything__get-sum", arguments: { a: 2, b: 40 } });
 log("everything__get-sum →", sum.content[0].text);
+// Not read-only: under the default permissions the host must approve it (the CLI answers "y").
+const toggled = await all.callTool({ name: "everything__toggle-simulated-logging", arguments: {} });
+log("everything__toggle-simulated-logging →", toggled.isError ? `declined: ${toggled.content[0].text}` : toggled.content[0].text);
 
 const files = await connect("/mcp/files", provider);
 log("connected to /mcp/files as", files.getServerVersion()?.name);

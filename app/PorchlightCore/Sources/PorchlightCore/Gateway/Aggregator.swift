@@ -191,6 +191,17 @@ public actor Aggregator: MCPEndpoint {
         return await upstream.request(forwarded, onProgress: onProgress)
     }
 
+    /// The server and original name behind a combined tool name.
+    public func resolveTool(_ alias: String) async -> (server: String, tool: String)? {
+        if toolRoutes[alias] == nil { _ = await listTools() }
+        return toolRoutes[alias].map { ($0.server, $0.name) }
+    }
+
+    /// Like `resolveTool`, without listing: for names that were just listed.
+    func knownTool(_ alias: String) -> (server: String, tool: String)? {
+        toolRoutes[alias].map { ($0.server, $0.name) }
+    }
+
     private func route(_ alias: String, _ kind: RenamedKind) -> Route? {
         switch kind {
         case .tool: toolRoutes[alias]

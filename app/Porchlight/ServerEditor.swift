@@ -17,6 +17,7 @@ struct ServerEditor: View {
     /// While adding, the name follows the command until the user types one.
     @State private var nameEdited: Bool
     @State private var test: TestState = .idle
+    @State private var editingTools = false
 
     struct Pair: Identifiable {
         let id = UUID()
@@ -100,6 +101,24 @@ struct ServerEditor: View {
                 }
 
                 Section {
+                    Picker("Tools", selection: $draft.toolPolicy.defaultPermission) {
+                        ForEach(ToolPolicy.Default.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    HStack {
+                        Text(overridesSummary).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Per-Tool Settings…") { editingTools = true }
+                            .disabled(!preview.isRunnable || headerError != nil)
+                    }
+                } header: {
+                    Text("Permissions")
+                } footer: {
+                    Text("Tools that make changes are those that don't declare themselves read-only. When Porchlight asks, you choose on your Mac: allow once, always allow, or deny.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section {
                     Toggle("Enabled", isOn: $draft.enabled)
                     HStack(alignment: .firstTextBaseline) {
                         Button("Test Connection") { runTest() }
@@ -120,7 +139,16 @@ struct ServerEditor: View {
             }
             .padding()
         }
-        .frame(width: 560, height: 560)
+        .frame(width: 560, height: 640)
+        .sheet(isPresented: $editingTools) {
+            ToolPermissionsView(config: preview, policy: $draft.toolPolicy)
+        }
+    }
+
+    private var overridesSummary: String {
+        let overrides = draft.toolPolicy.overrides
+        if overrides.isEmpty { return "No per-tool exceptions" }
+        return overrides.count == 1 ? "1 tool set individually" : "\(overrides.count) tools set individually"
     }
 
     @ViewBuilder private var testResult: some View {

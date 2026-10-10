@@ -33,24 +33,13 @@ actor RecordedResponse {
     }
 }
 
-/// A value shared with `@Sendable` callbacks.
-final class Locked<Value>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: Value
-
-    init(_ value: Value) { stored = value }
-
-    var value: Value { lock.withLock { stored } }
-
-    func withLock(_ body: (inout Value) -> Void) {
-        lock.withLock { body(&stored) }
-    }
-}
-
 let fakeScript = Bundle.module.path(forResource: "fake_server", ofType: "py", inDirectory: "Fixtures")!
 
-func fakeConfig(_ name: String, enabled: Bool = true) -> ServerConfig {
-    ServerConfig(name: name, command: "python3", args: ["-u", fakeScript], env: ["FAKE_NAME": name], enabled: enabled)
+/// Tools run without approval unless a test sets a stricter policy.
+func fakeConfig(_ name: String, enabled: Bool = true, policy: ToolPolicy = ToolPolicy(defaultPermission: .allowAll)) -> ServerConfig {
+    var config = ServerConfig(name: name, command: "python3", args: ["-u", fakeScript], env: ["FAKE_NAME": name], enabled: enabled)
+    config.toolPolicy = policy
+    return config
 }
 
 func makeRouter(_ servers: [ServerConfig]) async -> Router {
@@ -182,8 +171,23 @@ func sseMessages(_ body: String) -> [JSONValue] {
         let stats = await post(router, callTool(id: 4, "stats"), path: "/mcp/fake")
         #expect(toolText(await stats.json)?["initialize_count"] == .int(1))
         #expect(await stats.json?["id"] == .int(4))
-        #expect(statuses.value.contains(.failed("Exited with status 1")))
+        // The next request restarts it, possibly before the exit code is known.
+        #expect(statuses.value.contains { if case .failed(let reason) = $0 { reason.hasPrefix("Exited") } else { false } })
         #expect(statuses.value.last == .running)
+    }
+
+    @Test func reportsTheExitCodeOfACrashedServer() async throws {
+        let statuses = Locked<[UpstreamStatus]>([])
+        let router = Router(environment: ProcessInfo.processInfo.environment, log: { _, _ in }, onStatus: { _, status in
+            statuses.withLock { $0.append(status) }
+        })
+        await router.apply([fakeConfig("fake")])
+        defer { Task { await router.stopAll() } }
+        _ = await post(router, callTool(id: 1, "crash"), path: "/mcp/fake")
+        for _ in 0..<50 where statuses.value.last != .failed("Exited with status 1") {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(statuses.value.last == .failed("Exited with status 1"))
     }
 
     @Test func httpEdges() async {

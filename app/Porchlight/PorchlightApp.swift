@@ -17,6 +17,10 @@ struct PorchlightApp: App {
         }
         .windowResizability(.contentSize)
 
+        Window("Porchlight Activity", id: "activity") {
+            ActivityView().environment(model)
+        }
+
         Window("Porchlight Logs", id: "logs") {
             LogsView().environment(model)
         }

@@ -24,11 +24,11 @@ struct MenuContent: View {
                     .disabled(!model.isConfigured)
             }
 
-            if let request = model.pendingPairings.first {
-                Button { model.showPendingPairing() } label: {
+            if let waiting = waitingSummary {
+                Button { model.showPendingPrompt() } label: {
                     HStack {
                         Image(systemName: "bell.badge.fill").foregroundStyle(.orange)
-                        Text("\(request.clientName) wants to connect")
+                        Text(waiting)
                         Spacer()
                         Text("Review").foregroundStyle(.secondary)
                     }
@@ -64,6 +64,7 @@ struct MenuContent: View {
             Divider()
             HStack {
                 Button("Settings…") { show("settings") }
+                Button("Activity") { show("activity") }
                 Button("Logs") { show("logs") }
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
@@ -72,6 +73,12 @@ struct MenuContent: View {
         }
         .padding(14)
         .frame(width: 340)
+    }
+
+    private var waitingSummary: String? {
+        if let request = model.pendingPairings.first { return "\(request.clientName) wants to connect" }
+        if let request = model.pendingApprovals.first { return "\(request.clientName) wants to use \(request.tool)" }
+        return nil
     }
 
     private var relayColor: Color {

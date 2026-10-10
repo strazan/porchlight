@@ -21,6 +21,7 @@ public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
     public var url: String
     public var headers: [String: String]
     public var enabled: Bool
+    public var toolPolicy: ToolPolicy
 
     public init(
         id: UUID = UUID(),
@@ -39,6 +40,7 @@ public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
         url = ""
         headers = [:]
         self.enabled = enabled
+        toolPolicy = ToolPolicy()
     }
 
     public init(id: UUID = UUID(), name: String, url: String, headers: [String: String] = [:], enabled: Bool = true) {
@@ -51,10 +53,11 @@ public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
         self.url = url
         self.headers = headers
         self.enabled = enabled
+        toolPolicy = ToolPolicy()
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, transport, command, args, env, url, headers, enabled
+        case id, name, transport, command, args, env, url, headers, enabled, toolPolicy
     }
 
     // Lists saved before HTTP servers existed have no transport, url or headers.
@@ -69,6 +72,7 @@ public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
         url = try c.decodeIfPresent(String.self, forKey: .url) ?? ""
         headers = try c.decodeIfPresent([String: String].self, forKey: .headers) ?? [:]
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        toolPolicy = try c.decodeIfPresent(ToolPolicy.self, forKey: .toolPolicy) ?? ToolPolicy()
     }
 
     public var commandLine: [String] { [command] + args }
@@ -86,7 +90,8 @@ public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
         }
     }
 
-    /// Whether two configs describe the same server, ignoring name and on/off.
+    /// Whether two configs describe the same server, ignoring name, on/off and tool policy
+    /// (none of which need the server restarted).
     public func sameServer(as other: ServerConfig) -> Bool {
         transport == other.transport && commandLine == other.commandLine && env == other.env
             && url == other.url && headers == other.headers

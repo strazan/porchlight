@@ -36,8 +36,16 @@ public final class StdioProcess: @unchecked Sendable {
 
     public var isRunning: Bool { process.isRunning }
 
-    /// Only meaningful once the process has exited.
-    public var exitStatus: Int32 { process.isRunning ? 0 : process.terminationStatus }
+    /// Waits for the process to exit and returns its status. Its stdout can close a moment
+    /// before it's reaped, so don't read the status right at end of output.
+    public func exitStatus() async -> Int32 {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                self.process.waitUntilExit()
+                continuation.resume(returning: self.process.terminationStatus)
+            }
+        }
+    }
 
     public func start() throws {
         // A child that exits while we write must not kill us with SIGPIPE.

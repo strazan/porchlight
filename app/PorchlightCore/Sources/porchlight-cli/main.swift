@@ -13,6 +13,8 @@ let usage = """
       --name <name>      Name for a server given after -- (default: "default")
       --config <file>    Server list to serve (default: the Porchlight app's list)
       --check            Connect to each enabled server, report what answers, and exit
+      --allow-tools      Run every tool without asking (default: ask on the terminal for
+                         tools that don't declare themselves read-only)
 
     The relay's shared secret is read from PORCHLIGHT_SECRET.
 
@@ -29,6 +31,7 @@ func fail(_ message: String) -> Never {
 var relayArg: String?
 var configArg: String?
 var checkOnly = false
+var allowTools = false
 var name = "default"
 var command: [String] = []
 var args = CommandLine.arguments.dropFirst()
@@ -44,6 +47,7 @@ while let arg = args.popFirst() {
         guard let value = args.popFirst() else { fail("--config needs a value") }
         configArg = value
     case "--check": checkOnly = true
+    case "--allow-tools": allowTools = true
     case "--": command = Array(args); args.removeAll()
     case "-h", "--help": print(usage); exit(0)
     default: fail("unknown argument \(arg)")
@@ -91,9 +95,43 @@ func agentURL(from string: String) -> URL? {
     return components.url
 }
 
-let servers = loadServers()
+var servers = loadServers()
+if allowTools {
+    for index in servers.indices { servers[index].toolPolicy = ToolPolicy(defaultPermission: .allowAll) }
+}
 
-let router = Router(environment: ProcessInfo.processInfo.environment)
+/// One question at a time on the terminal; no terminal (or end of input) means no.
+actor TerminalPrompt {
+    func ask(_ question: String) async -> String {
+        stderrLog(question)
+        FileHandle.standardError.write(Data("> ".utf8))
+        let answer = await Task.detached { readLine() }.value
+        return answer?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
+    }
+}
+let prompt = TerminalPrompt()
+
+let routerBox = Locked<Router?>(nil)
+let router = Router(
+    environment: ProcessInfo.processInfo.environment,
+    approve: { request in
+        let answer = await prompt.ask("""
+
+            \(request.clientName) wants to run \(request.tool) on \(request.server) with:
+            \(String(decoding: request.arguments.serialized(), as: UTF8.self))
+            Allow? [y]es / [N]o / [a]lways for this tool
+            """)
+        switch answer {
+        case "a", "always":
+            stderrLog("allowing \(request.tool) for the rest of this session")
+            await routerBox.value?.setPermission(.allow, tool: request.tool, server: request.server)
+            return .allowAlways
+        case "y", "yes": return .allowOnce
+        default: return .deny
+        }
+    }
+)
+routerBox.withLock { $0 = router }
 await router.apply(servers)
 for server in servers where server.enabled {
     stderrLog("serving \(server.name): \(server.commandLineString)")
@@ -121,15 +159,13 @@ Task {
         switch event {
         case .pairingRequested(let request):
             let origin = request.clientDomain.map { "published by \($0)" } ?? "unverified name"
-            stderrLog("""
+            let answer = await prompt.ask("""
 
                 \(request.clientName) (\(origin)) wants to connect; access goes to \(request.redirectHost).
                 Check that the browser shows code \(request.formattedCode).
+                Allow? [y/N]
                 """)
-            FileHandle.standardError.write(Data("Allow? [y/N] ".utf8))
-            // No terminal (or end of input) means no.
-            let answer = await Task.detached { readLine() }.value
-            let allow = answer?.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("y") == true
+            let allow = answer.hasPrefix("y")
             await client.decidePairing(request.id, allow: allow)
             stderrLog(allow ? "approved \(request.clientName)" : "declined \(request.clientName)")
         case .clientsChanged(let clients):
