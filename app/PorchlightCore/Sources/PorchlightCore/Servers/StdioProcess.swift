@@ -36,6 +36,9 @@ public final class StdioProcess: @unchecked Sendable {
 
     public var isRunning: Bool { process.isRunning }
 
+    /// Only meaningful once the process has exited.
+    public var exitStatus: Int32 { process.isRunning ? 0 : process.terminationStatus }
+
     public func start() throws {
         // A child that exits while we write must not kill us with SIGPIPE.
         signal(SIGPIPE, SIG_IGN)

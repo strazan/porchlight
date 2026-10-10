@@ -14,9 +14,9 @@ Claude.ai / ChatGPT ──HTTPS──▶ your relay (Cloudflare Worker + Durable
                                your Mac: Porchlight ──stdio──▶ MCP servers
 ```
 
-> **Status: M0 (proof of concept).** A Swift CLI serves one stdio server through a
-> relay. The macOS menubar app, OAuth, aggregation of several servers, and
-> one-click deploy come next. See the roadmap below.
+> **Status: early.** The menubar app runs your servers and serves them through your
+> relay, combined at `/mcp` and one by one at `/s/<name>/mcp`. OAuth and one-click
+> deploy come next. See the roadmap below.
 
 ## Repository
 
@@ -40,6 +40,9 @@ make build-cli
 PORCHLIGHT_SECRET=dev-secret-change-me app/PorchlightCore/.build/release/porchlight-cli \
   --relay http://localhost:8787 --name everything \
   -- npx -y @modelcontextprotocol/server-everything
+
+# or serve the app's server list headless (or any servers.json):
+#   app/PorchlightCore/.build/release/porchlight-cli --relay http://localhost:8787 [--config servers.json]
 
 # in a third terminal
 npx @modelcontextprotocol/inspector --cli http://localhost:8787/mcp \
@@ -82,16 +85,19 @@ and keepalive pings are answered without waking it.
 - Your Mac opens a WebSocket to `/agent` and authenticates with `AGENT_SECRET`.
 - MCP clients send Streamable HTTP requests to `/mcp` (or `/s/<server>/mcp`). The relay
   forwards each request over the socket and streams the response back.
-- On the Mac, `StdioBridge` shares one child process between all clients. It rewrites
-  JSON-RPC ids so clients can't collide, does the `initialize` handshake once (and again
-  if the server restarts), and answers `tools/call` over SSE with keepalives and
-  progress notifications, so long-running tools work.
+- On the Mac, each server runs as one child process shared by all clients. Porchlight
+  does the `initialize` handshake itself (and again if the server restarts), rewrites
+  JSON-RPC ids so clients can't collide, and answers `tools/call` over SSE with
+  keepalives and progress notifications, so long-running tools work.
+- `/mcp` combines every enabled server: tools and prompts are renamed
+  `<server>__<name>`, and resources are routed by URI. `/s/<name>/mcp` serves one
+  server unchanged.
 
 ## Roadmap
 
 - [x] **M0**: relay + CLI host, one stdio server, end to end
 - [ ] **M1**: OAuth 2.1 at the relay, where you approve new clients on your Mac
-- [ ] **M2**: menubar app: manage servers, import from Claude Desktop/Cursor configs, one combined endpoint plus one per server
+- [x] **M2**: menubar app: manage servers, import from Claude Desktop/Claude Code/Cursor configs, one combined endpoint plus one per server
 - [ ] **M3**: one-click deploy to your Cloudflare account from the app, Keychain, launch at login
 - [ ] **M4**: per-tool policies (allow / ask / deny), approvals, activity log, revoke clients
 - [ ] **M5**: signed releases, Homebrew cask, self-hosted relay (Docker)

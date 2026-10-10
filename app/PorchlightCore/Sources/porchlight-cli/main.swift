@@ -3,12 +3,14 @@ import PorchlightCore
 
 let usage = """
     Usage: porchlight-cli --relay <url> [--name <name>] -- <command> [args...]
+           porchlight-cli --relay <url> [--config <servers.json>]
 
-    Connects to a Porchlight relay and serves one local stdio MCP server through it,
-    at <relay>/mcp and <relay>/s/<name>/mcp.
+    Connects to a Porchlight relay and serves local stdio MCP servers through it: all of
+    them combined at <relay>/mcp, and each one at <relay>/s/<name>/mcp.
 
-      --relay <url>   Relay URL, e.g. https://porchlight-relay.you.workers.dev
-      --name <name>   Server name for the per-server endpoint (default: "default")
+      --relay <url>      Relay URL, e.g. https://porchlight-relay.you.workers.dev
+      --name <name>      Name for a server given after -- (default: "default")
+      --config <file>    Server list to serve (default: the Porchlight app's list)
 
     The relay's shared secret is read from PORCHLIGHT_SECRET.
 
@@ -23,6 +25,7 @@ func fail(_ message: String) -> Never {
 }
 
 var relayArg: String?
+var configArg: String?
 var name = "default"
 var command: [String] = []
 var args = CommandLine.arguments.dropFirst()
@@ -34,13 +37,16 @@ while let arg = args.popFirst() {
     case "--name":
         guard let value = args.popFirst() else { fail("--name needs a value") }
         name = value
+    case "--config":
+        guard let value = args.popFirst() else { fail("--config needs a value") }
+        configArg = value
     case "--": command = Array(args); args.removeAll()
     case "-h", "--help": print(usage); exit(0)
     default: fail("unknown argument \(arg)")
     }
 }
 guard let relayArg else { fail("--relay is required") }
-guard !command.isEmpty else { fail("missing server command after --") }
+guard ServerConfig.isValidName(name) else { fail("--name must be lowercase letters, digits and hyphens") }
 guard let secret = ProcessInfo.processInfo.environment["PORCHLIGHT_SECRET"], !secret.isEmpty else {
     fail("PORCHLIGHT_SECRET is not set")
 }
@@ -59,8 +65,24 @@ func agentURL(from string: String) -> URL? {
     return components.url
 }
 
-let bridge = StdioBridge(name: name, command: command)
-let client = RelayClient(url: relayURL, secret: secret, handler: bridge, appVersion: "cli-0.0.1") { status in
+let servers: [ServerConfig]
+if !command.isEmpty {
+    servers = [ServerConfig(name: name, command: command[0], args: Array(command.dropFirst()))]
+} else {
+    let store = configArg.map { ServerStore(url: URL(fileURLWithPath: $0)) } ?? .standard
+    guard let loaded = store.load(), !loaded.isEmpty else {
+        fail("no servers: pass a command after --, or a --config file (looked in \(store.url.path))")
+    }
+    servers = loaded
+}
+
+let router = Router(environment: ProcessInfo.processInfo.environment)
+await router.apply(servers)
+for server in servers where server.enabled {
+    stderrLog("serving \(server.name): \(server.commandLineString)")
+}
+
+let client = RelayClient(url: relayURL, secret: secret, handler: router, appVersion: "cli-0.0.1") { status in
     switch status {
     case .connecting: stderrLog("relay: connecting to \(relayURL.absoluteString)")
     case .connected: stderrLog("relay: connected")
@@ -70,20 +92,17 @@ let client = RelayClient(url: relayURL, secret: secret, handler: bridge, appVers
 
 let runner = Task { await client.run() }
 
-// Stop the child server too on Ctrl-C.
+// On Ctrl-C or SIGTERM, stop serving; the child servers are stopped below.
 signal(SIGINT, SIG_IGN)
 signal(SIGTERM, SIG_IGN)
 let signals = [SIGINT, SIGTERM].map { sig in
     let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-    source.setEventHandler { @Sendable in
-        runner.cancel()
-        Task {
-            await bridge.stop()
-            exit(0)
-        }
-    }
+    source.setEventHandler { @Sendable in runner.cancel() }
     source.resume()
     return source
 }
 
-dispatchMain()
+// Top-level code is async (it awaits above), so the main queue is already serviced and
+// dispatchMain() would trap. Instead, wait here until a signal cancels the runner.
+await runner.value
+await router.stopAll()

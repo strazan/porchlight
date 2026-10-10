@@ -3,12 +3,16 @@
 
 tools: echo (returns its args), slow (sends progress, then answers after `seconds`).
 Exits on `tools/call` of `crash`. Counts initialize calls in the `stats` tool.
+Also one prompt (`greet`) and one resource (`fake://<name>/readme`). The server's name
+comes from FAKE_NAME so tests can tell several apart.
 """
 import json
+import os
 import sys
 import threading
 import time
 
+NAME = os.environ.get("FAKE_NAME", "fake")
 lock = threading.Lock()
 initialized = {"count": 0}
 
@@ -45,19 +49,27 @@ for line in sys.stdin:
     if method == "initialize":
         initialized["count"] += 1
         result(id, {"protocolVersion": params.get("protocolVersion", "2025-06-18"),
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "fake", "version": "1"}})
+                    "capabilities": {"tools": {}, "prompts": {}, "resources": {}},
+                    "serverInfo": {"name": NAME, "version": "1"}})
     elif method == "tools/list":
         result(id, {"tools": [{"name": "echo", "inputSchema": {"type": "object"}}]})
     elif method == "tools/call":
         name = params.get("name")
         if name == "echo":
-            result(id, text(json.dumps({"id": id, "args": params.get("arguments")})))
+            result(id, text(json.dumps({"id": id, "args": params.get("arguments"), "server": NAME})))
         elif name == "slow":
             threading.Thread(target=slow, args=(id, params)).start()
         elif name == "stats":
             result(id, text(json.dumps({"initialize_count": initialized["count"]})))
         elif name == "crash":
             sys.exit(1)
+    elif method == "prompts/list":
+        result(id, {"prompts": [{"name": "greet"}]})
+    elif method == "prompts/get":
+        result(id, {"messages": [{"role": "user", "content": {"type": "text", "text": f"hello from {NAME}"}}]})
+    elif method == "resources/list":
+        result(id, {"resources": [{"uri": f"fake://{NAME}/readme", "name": "readme"}]})
+    elif method == "resources/read":
+        result(id, {"contents": [{"uri": params["uri"], "text": NAME}]})
     else:
         send({"jsonrpc": "2.0", "id": id, "error": {"code": -32601, "message": "unknown"}})
