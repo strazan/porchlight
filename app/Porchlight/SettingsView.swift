@@ -5,6 +5,7 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             ServersTab().tabItem { Label("Servers", systemImage: "server.rack") }
+            ClientsTab().tabItem { Label("Apps", systemImage: "app.connected.to.app.below.fill") }
             RelayTab().tabItem { Label("Relay", systemImage: "network") }
         }
         .frame(width: 600, height: 460)
@@ -103,6 +104,63 @@ private struct ServerRow: View {
                 .labelsHidden()
         }
         .padding(.vertical, 3)
+    }
+}
+
+// MARK: - Apps
+
+private struct ClientsTab: View {
+    @Environment(AppModel.self) private var model
+    @State private var revoking: PairedClient?
+
+    var body: some View {
+        Group {
+            if !model.isConnected {
+                ContentUnavailableView(
+                    "Not Connected",
+                    systemImage: "network.slash",
+                    description: Text("Connect to your relay to see which apps have access.")
+                )
+            } else if model.clients.isEmpty {
+                ContentUnavailableView {
+                    Label("No Connected Apps", systemImage: "app.connected.to.app.below.fill")
+                } description: {
+                    Text("Add \(model.endpoint) as a custom connector in Claude, ChatGPT or another MCP client. You'll approve it here.")
+                } actions: {
+                    CopyButton(text: model.endpoint, help: "Copy the URL")
+                }
+            } else {
+                List(model.clients) { client in
+                    HStack(spacing: 10) {
+                        Image(systemName: "app.connected.to.app.below.fill")
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(client.clientName).font(.body.weight(.medium))
+                            Text(client.clientDomain ?? client.clientID)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Text("Connected \(client.createdAt, format: .relative(presentation: .named))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Revoke…") { revoking = client }
+                    }
+                    .padding(.vertical, 3)
+                }
+            }
+        }
+        .confirmationDialog(
+            "Revoke access for \(revoking?.clientName ?? "this app")?",
+            isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
+            presenting: revoking
+        ) { client in
+            Button("Revoke", role: .destructive) { model.revoke(client) }
+        } message: { _ in
+            Text("It stops working right away. To use it again, connect it again and approve it here.")
+        }
     }
 }
 

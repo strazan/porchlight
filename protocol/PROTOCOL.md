@@ -6,7 +6,9 @@ opens outbound**. The relay never connects to the host.
 
 The relay is deliberately MCP-agnostic: it tunnels raw HTTP requests to the host and
 streams raw HTTP responses back. All MCP logic (Streamable HTTP, aggregation,
-policy) lives on the host.
+policy) lives on the host. The relay's own jobs are OAuth (it is the authorization
+server for `<origin>/mcp`, which by path prefix also covers `/mcp/<name>`) and asking
+the host to approve new clients.
 
 ## Connecting
 
@@ -34,6 +36,8 @@ chunks are base64 (`*_b64`) so that frames stay valid JSON.
 |---|---|---|
 | `req` | `id`, `method`, `path`, `headers` (`[[name, value], …]`), `body_b64` | An incoming HTTP request. `path` includes the query string. |
 | `cancel` | `id` | The client went away; stop work and send nothing more for `id`. |
+| `pair_request` | `id`, `code`, `client_name`, `client_domain?`, `redirect_host`, `loopback` | An app is on the consent page. Show its details and `code` (the page shows the same code) and answer with `pair_decision`. Re-sent on reconnect while pending; expires after 10 minutes. |
+| `clients` | `items: [{grant_id, client_id, client_name, client_domain?, created_at}]` | The apps that currently have access. Sent after `list_clients`, after a pairing completes, and after `revoke_client`. |
 | `pong` | — | Reply to the host's `ping`. |
 
 ### Host → relay
@@ -44,6 +48,9 @@ chunks are base64 (`*_b64`) so that frames stay valid JSON.
 | `res_start` | `id`, `status`, `headers` | Begin the response. Exactly once per `req`. |
 | `res_chunk` | `id`, `data_b64` | Part of the response body. Zero or more. |
 | `res_end` | `id` | Response complete. |
+| `pair_decision` | `id`, `allow` | The owner's answer to a `pair_request`. |
+| `list_clients` | — | Ask for a `clients` frame. |
+| `revoke_client` | `grant_id` | Revoke an app's access immediately. |
 | `ping` | — | Keepalive, every ~30 s. Must be exactly `{"type":"ping"}` (see below). |
 
 A host that cannot produce a response sends `res_start` with a 5xx status followed by
@@ -65,9 +72,11 @@ concurrently, and SSE responses may stay open for a long time.
 
 ## Header handling
 
-The relay strips hop-by-hop headers and `Authorization` before forwarding
-(from v1/M1 onward, it adds `Porchlight-Client-*` identity headers instead). The
-host must not trust headers the relay did not set.
+The relay strips hop-by-hop headers and `Authorization` before forwarding, and replaces
+any `Porchlight-*` headers from the client with its own:
+
+- `Porchlight-Client-Id`: the OAuth client ID (URI-encoded)
+- `Porchlight-Client-Name`: the name the owner approved (URI-encoded)
 
 ## Timeouts and errors (relay behavior)
 

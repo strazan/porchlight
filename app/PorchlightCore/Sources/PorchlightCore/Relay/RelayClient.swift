@@ -17,6 +17,7 @@ public actor RelayClient {
     private let handler: any HTTPHandler
     private let appVersion: String
     private let onStatus: @Sendable (Status) -> Void
+    private let onEvent: @Sendable (RelayEvent) -> Void
     private let session = URLSession(configuration: .default)
 
     private var inflight: [String: Task<Void, Never>] = [:]
@@ -33,13 +34,32 @@ public actor RelayClient {
         secret: String,
         handler: any HTTPHandler,
         appVersion: String = "dev",
-        onStatus: @escaping @Sendable (Status) -> Void = { _ in }
+        onStatus: @escaping @Sendable (Status) -> Void = { _ in },
+        onEvent: @escaping @Sendable (RelayEvent) -> Void = { _ in }
     ) {
         self.url = url
         self.secret = secret
         self.handler = handler
         self.appVersion = appVersion
         self.onStatus = onStatus
+        self.onEvent = onEvent
+    }
+
+    // MARK: Control messages
+
+    /// Answers a pairing request from an app's consent page.
+    public func decidePairing(_ id: String, allow: Bool) async {
+        try? await socket?.send(.string(HostFrame.pairDecision(id: id, allow: allow)))
+    }
+
+    /// Asks the relay for the current clients; they arrive as `.clientsChanged`.
+    public func refreshClients() async {
+        try? await socket?.send(.string(HostFrame.listClients))
+    }
+
+    /// Revokes a client's access; the updated list arrives as `.clientsChanged`.
+    public func revokeClient(_ grantID: String) async {
+        try? await socket?.send(.string(HostFrame.revokeClient(grantID: grantID)))
     }
 
     /// Connects and reconnects (with jittered backoff) until the calling task is cancelled.
@@ -97,6 +117,7 @@ public actor RelayClient {
         }
         onStatus(.connected)
         lastPong = Date()
+        try? await ws.send(.string(HostFrame.listClients))
 
         let keepalive = Task { await self.keepalive(ws) }
         defer { keepalive.cancel() }
@@ -137,6 +158,8 @@ public actor RelayClient {
             }
         case .cancel(let id):
             inflight.removeValue(forKey: id)?.cancel()
+        case .event(let event):
+            onEvent(event)
         case .unknown:
             break
         }

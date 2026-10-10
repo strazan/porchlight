@@ -15,8 +15,8 @@ Claude.ai / ChatGPT ──HTTPS──▶ your relay (Cloudflare Worker + Durable
 ```
 
 > **Status: early.** The menubar app runs your servers and serves them through your
-> relay, combined at `/mcp` and one by one at `/s/<name>/mcp`. OAuth and one-click
-> deploy come next. See the roadmap below.
+> relay, combined at `/mcp` and one by one at `/mcp/<name>`. Apps connect with OAuth,
+> and you approve each one on your Mac. One-click deploy comes next. See the roadmap below.
 
 ## Repository
 
@@ -43,10 +43,10 @@ PORCHLIGHT_SECRET=dev-secret-change-me app/PorchlightCore/.build/release/porchli
 
 # or serve the app's server list headless (or any servers.json):
 #   app/PorchlightCore/.build/release/porchlight-cli --relay http://localhost:8787 [--config servers.json]
+# The CLI asks on the terminal when an app wants to connect.
 
-# in a third terminal
-npx @modelcontextprotocol/inspector --cli http://localhost:8787/mcp \
-  --transport http --method tools/list
+# in a third terminal: connect with MCP Inspector (choose Streamable HTTP and OAuth)
+npx @modelcontextprotocol/inspector
 ```
 
 Or use the menubar app instead of the CLI: `make app` builds `Porchlight.app` and opens it
@@ -65,17 +65,17 @@ AGENT_SECRET=dev-secret-change-me
 cd relay
 npx wrangler login
 openssl rand -hex 32 | npx wrangler secret put AGENT_SECRET   # shared with your Mac
-openssl rand -hex 32 | npx wrangler secret put CLIENT_KEY     # see the warning below
-npx wrangler deploy
+npx wrangler deploy                                           # also creates the OAUTH_KV namespace
 ```
 
-Then run the CLI with `--relay https://porchlight-relay.<you>.workers.dev` and
-`PORCHLIGHT_SECRET` set to your `AGENT_SECRET`. In Claude.ai, add a custom connector
-with the URL `https://porchlight-relay.<you>.workers.dev/mcp?key=<CLIENT_KEY>`.
+In Porchlight's Settings → Relay, enter `https://porchlight-relay.<you>.workers.dev` and
+your `AGENT_SECRET`. Then add `https://porchlight-relay.<you>.workers.dev/mcp` as a custom
+connector in Claude, ChatGPT or any MCP client that supports OAuth. When it connects,
+your browser shows a code and Porchlight asks you to approve the app with the same code.
+Apps you've approved are listed under Settings → Apps, where you can revoke them.
 
-> ⚠️ **Until OAuth lands (M1), `CLIENT_KEY` is the only thing between the internet and
-> the tools on your Mac.** Always set it, keep the URL private, and only expose servers
-> you'd be comfortable with a cloud model driving.
+> Only connect servers you'd be comfortable with a cloud model driving: an approved app
+> can use every enabled server.
 
 The relay fits in Cloudflare's free tier. The Durable Object hibernates while idle,
 and keepalive pings are answered without waking it.
@@ -83,20 +83,22 @@ and keepalive pings are answered without waking it.
 ## How it works
 
 - Your Mac opens a WebSocket to `/agent` and authenticates with `AGENT_SECRET`.
-- MCP clients send Streamable HTTP requests to `/mcp` (or `/s/<server>/mcp`). The relay
-  forwards each request over the socket and streams the response back.
+- MCP clients authorize with OAuth 2.1 against the relay (dynamic registration or Client
+  ID Metadata Documents, PKCE). The consent step is approved on your Mac.
+- They then send Streamable HTTP requests to `/mcp` (or `/mcp/<server>`). The relay
+  checks the token, forwards each request over the socket and streams the response back.
 - On the Mac, each server runs as one child process shared by all clients. Porchlight
   does the `initialize` handshake itself (and again if the server restarts), rewrites
   JSON-RPC ids so clients can't collide, and answers `tools/call` over SSE with
   keepalives and progress notifications, so long-running tools work.
 - `/mcp` combines every enabled server: tools and prompts are renamed
-  `<server>__<name>`, and resources are routed by URI. `/s/<name>/mcp` serves one
+  `<server>__<name>`, and resources are routed by URI. `/mcp/<name>` serves one
   server unchanged.
 
 ## Roadmap
 
 - [x] **M0**: relay + CLI host, one stdio server, end to end
-- [ ] **M1**: OAuth 2.1 at the relay, where you approve new clients on your Mac
+- [x] **M1**: OAuth 2.1 at the relay, where you approve new clients on your Mac
 - [x] **M2**: menubar app: manage servers, import from Claude Desktop/Claude Code/Cursor configs, one combined endpoint plus one per server
 - [ ] **M3**: one-click deploy to your Cloudflare account from the app, Keychain, launch at login
 - [ ] **M4**: per-tool policies (allow / ask / deny), approvals, activity log, revoke clients

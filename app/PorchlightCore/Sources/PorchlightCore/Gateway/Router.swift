@@ -1,6 +1,6 @@
 import Foundation
 
-/// Routes tunneled requests: `/mcp` to the aggregate of all servers, `/s/<name>/mcp`
+/// Routes tunneled requests: `/mcp` to the aggregate of all servers, `/mcp/<name>`
 /// to one server. Owns the running servers and applies configuration changes live.
 public actor Router: HTTPHandler {
     public typealias StatusSink = @Sendable (_ server: String, _ status: StdioUpstream.Status) -> Void
@@ -68,7 +68,7 @@ public actor Router: HTTPHandler {
             return await StreamableHTTP.serve(request, responder, endpoint: aggregator)
         }
         let parts = route.split(separator: "/")
-        if parts.count == 3, parts[0] == "s", parts[2] == "mcp", let entry = running[String(parts[1])] {
+        if parts.count == 2, parts[0] == "mcp", let entry = running[String(parts[1])] {
             return await StreamableHTTP.serve(request, responder, endpoint: PassthroughEndpoint(upstream: entry.upstream))
         }
         await responder.respond(404, [("content-type", "text/plain")], body: Data("No such server\n".utf8))

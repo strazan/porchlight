@@ -25,11 +25,19 @@ final class AppModel {
     private(set) var serverStatus: [String: StdioUpstream.Status] = [:]
     private(set) var state: State = .off
     private(set) var logs: [LogLine] = []
+    /// Apps waiting for the owner to approve them, oldest first.
+    private(set) var pendingPairings: [PairingRequest] = []
+    /// Apps that have been granted access through the relay.
+    private(set) var clients: [PairedClient] = []
 
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private let store = ServerStore.standard
     @ObservationIgnored private var runner: Task<Void, Never>?
     @ObservationIgnored private var router: Router?
+    @ObservationIgnored private var client: RelayClient?
+    @ObservationIgnored private lazy var pairingPanel = PairingPanel(model: self)
+    /// The relay forgets a pairing after this long (its consent page expires).
+    private static let pairingLifetime: Duration = .seconds(10 * 60)
     @ObservationIgnored private var nextLogID = 0
     private static let maxLogLines = 2000
 
@@ -58,6 +66,7 @@ final class AppModel {
 
     var isConfigured: Bool { !secret.isEmpty && agentURL != nil }
     var isOn: Bool { state != .off }
+    var isConnected: Bool { state == .relay(.connected) }
 
     var statusText: String {
         switch state {
@@ -71,7 +80,7 @@ final class AppModel {
     /// The URL to give MCP clients for all servers combined.
     var endpoint: String { baseURL + "/mcp" }
 
-    func endpoint(for server: ServerConfig) -> String { baseURL + "/s/\(server.name)/mcp" }
+    func endpoint(for server: ServerConfig) -> String { baseURL + "/mcp/\(server.name)" }
 
     private var baseURL: String {
         var base = relayURL.trimmingCharacters(in: .whitespaces)
@@ -176,10 +185,20 @@ final class AppModel {
         )
         await router.apply(servers)
         await router.warmUp()
-        let client = RelayClient(url: url, secret: secret, handler: router, appVersion: "app-0.0.1") { [weak self] status in
-            Task { @MainActor in self?.relayStatusChanged(status) }
-        }
+        let client = RelayClient(
+            url: url,
+            secret: secret,
+            handler: router,
+            appVersion: "app-0.0.1",
+            onStatus: { [weak self] status in
+                Task { @MainActor in self?.relayStatusChanged(status) }
+            },
+            onEvent: { [weak self] event in
+                Task { @MainActor in self?.relayEvent(event) }
+            }
+        )
         self.router = router
+        self.client = client
         runner = Task { await client.run() }
         log("Connecting to \(relayURL)")
     }
@@ -189,7 +208,11 @@ final class AppModel {
         runner = nil
         if let router { Task { await router.stopAll() } }
         router = nil
+        client = nil
         serverStatus = [:]
+        pendingPairings = []
+        clients = []
+        pairingPanel.update()
         if state != .off { log("Stopped") }
         state = .off
     }
@@ -201,6 +224,43 @@ final class AppModel {
 
     func clearLogs() {
         logs.removeAll()
+    }
+
+    // MARK: Pairing and clients
+
+    func decide(_ request: PairingRequest, allow: Bool) {
+        pendingPairings.removeAll { $0.id == request.id }
+        pairingPanel.update()
+        log("\(allow ? "Approved" : "Declined") \(request.clientName)")
+        guard let client else { return }
+        Task { await client.decidePairing(request.id, allow: allow) }
+    }
+
+    func revoke(_ paired: PairedClient) {
+        log("Revoked \(paired.clientName)")
+        guard let client else { return }
+        Task { await client.revokeClient(paired.id) }
+    }
+
+    func showPendingPairing() {
+        pairingPanel.update(bringToFront: true)
+    }
+
+    private func relayEvent(_ event: RelayEvent) {
+        switch event {
+        case .pairingRequested(let request):
+            guard !pendingPairings.contains(where: { $0.id == request.id }) else { return }
+            pendingPairings.append(request)
+            log("\(request.clientName) wants to connect (code \(request.formattedCode))")
+            pairingPanel.update(bringToFront: true)
+            Task {
+                try? await Task.sleep(for: Self.pairingLifetime)
+                pendingPairings.removeAll { $0.id == request.id }
+                pairingPanel.update()
+            }
+        case .clientsChanged(let clients):
+            self.clients = clients.sorted { $0.createdAt > $1.createdAt }
+        }
     }
 
     private func relayStatusChanged(_ status: RelayClient.Status) {

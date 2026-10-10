@@ -3,7 +3,7 @@ import Foundation
 /// A local MCP server Porchlight runs. Same shape as Claude Desktop's `mcpServers` entries.
 public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
     public var id: UUID
-    /// URL-safe and unique: used in `/s/<name>/mcp` and as the tool-name prefix.
+    /// URL-safe and unique: used in `/mcp/<name>` and as the tool-name prefix.
     public var name: String
     public var command: String
     public var args: [String]

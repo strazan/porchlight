@@ -6,7 +6,7 @@ let usage = """
            porchlight-cli --relay <url> [--config <servers.json>]
 
     Connects to a Porchlight relay and serves local stdio MCP servers through it: all of
-    them combined at <relay>/mcp, and each one at <relay>/s/<name>/mcp.
+    them combined at <relay>/mcp, and each one at <relay>/mcp/<name>.
 
       --relay <url>      Relay URL, e.g. https://porchlight-relay.you.workers.dev
       --name <name>      Name for a server given after -- (default: "default")
@@ -82,11 +82,43 @@ for server in servers where server.enabled {
     stderrLog("serving \(server.name): \(server.commandLineString)")
 }
 
-let client = RelayClient(url: relayURL, secret: secret, handler: router, appVersion: "cli-0.0.1") { status in
-    switch status {
-    case .connecting: stderrLog("relay: connecting to \(relayURL.absoluteString)")
-    case .connected: stderrLog("relay: connected")
-    case .disconnected(let reason): stderrLog("relay: disconnected (\(reason))")
+let (events, eventSink) = AsyncStream.makeStream(of: RelayEvent.self)
+let client = RelayClient(
+    url: relayURL,
+    secret: secret,
+    handler: router,
+    appVersion: "cli-0.0.1",
+    onStatus: { status in
+        switch status {
+        case .connecting: stderrLog("relay: connecting to \(relayURL.absoluteString)")
+        case .connected: stderrLog("relay: connected")
+        case .disconnected(let reason): stderrLog("relay: disconnected (\(reason))")
+        }
+    },
+    onEvent: { eventSink.yield($0) }
+)
+
+// Apps connecting through the relay need the owner's approval: ask on the terminal.
+Task {
+    for await event in events {
+        switch event {
+        case .pairingRequested(let request):
+            let origin = request.clientDomain.map { "published by \($0)" } ?? "unverified name"
+            stderrLog("""
+
+                \(request.clientName) (\(origin)) wants to connect; access goes to \(request.redirectHost).
+                Check that the browser shows code \(request.formattedCode).
+                """)
+            FileHandle.standardError.write(Data("Allow? [y/N] ".utf8))
+            // No terminal (or end of input) means no.
+            let answer = await Task.detached { readLine() }.value
+            let allow = answer?.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("y") == true
+            await client.decidePairing(request.id, allow: allow)
+            stderrLog(allow ? "approved \(request.clientName)" : "declined \(request.clientName)")
+        case .clientsChanged(let clients):
+            let names = clients.map(\.clientName)
+            stderrLog("apps with access: \(names.isEmpty ? "none" : names.joined(separator: ", "))")
+        }
     }
 }
 

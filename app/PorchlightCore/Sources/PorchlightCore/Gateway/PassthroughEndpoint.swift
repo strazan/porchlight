@@ -1,6 +1,6 @@
 import Foundation
 
-/// Serves one upstream as-is, at `/s/<name>/mcp`.
+/// Serves one upstream as-is, at `/mcp/<name>`.
 public struct PassthroughEndpoint: MCPEndpoint {
     let upstream: StdioUpstream
 

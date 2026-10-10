@@ -1,14 +1,28 @@
+import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
+import { hub, providerOptions } from "./oauth";
 import { PROTOCOL_VERSION } from "./protocol";
 
 export { Hub } from "./hub";
 
+// The relay's public origin is only known per request (each user deploys their own).
+const providers = new Map<string, OAuthProvider<Env>>();
+
+function provider(origin: string): OAuthProvider<Env> {
+	let existing = providers.get(origin);
+	if (!existing) {
+		existing = new OAuthProvider(providerOptions(origin));
+		providers.set(origin, existing);
+	}
+	return existing;
+}
+
 export default {
-	async fetch(request, env): Promise<Response> {
-		const { pathname } = new URL(request.url);
+	async fetch(request, env, ctx): Promise<Response> {
+		const url = new URL(request.url);
 
-		if (pathname === "/health") return Response.json({ ok: true, proto: PROTOCOL_VERSION });
+		if (url.pathname === "/health") return Response.json({ ok: true, proto: PROTOCOL_VERSION });
 
-		if (pathname === "/agent") {
+		if (url.pathname === "/agent") {
 			if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
 				return new Response("Expected WebSocket upgrade", { status: 426 });
 			}
@@ -21,25 +35,10 @@ export default {
 			return hub(env).fetch(request);
 		}
 
-		if (pathname === "/mcp" || pathname.startsWith("/s/")) {
-			// Stopgap until OAuth (M1): an optional shared key, as ?key= or a bearer token.
-			if (env.CLIENT_KEY) {
-				const url = new URL(request.url);
-				const key = url.searchParams.get("key") ?? request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-				if (!(await secretsEqual(key, env.CLIENT_KEY))) return new Response("Unauthorized", { status: 401 });
-				url.searchParams.delete("key");
-				request = new Request(url, request);
-			}
-			return hub(env).fetch(request);
-		}
-
-		return new Response("Not found", { status: 404 });
+		// OAuth endpoints, the consent page, and /mcp (which requires a token).
+		return provider(url.origin).fetch(request, env, ctx);
 	},
 } satisfies ExportedHandler<Env>;
-
-function hub(env: Env) {
-	return env.HUB.get(env.HUB.idFromName("default"));
-}
 
 /** Constant-time comparison; hashing first makes the lengths equal. */
 async function secretsEqual(a: string, b: string): Promise<boolean> {

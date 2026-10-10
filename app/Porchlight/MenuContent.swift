@@ -24,6 +24,21 @@ struct MenuContent: View {
                     .disabled(!model.isConfigured)
             }
 
+            if let request = model.pendingPairings.first {
+                Button { model.showPendingPairing() } label: {
+                    HStack {
+                        Image(systemName: "bell.badge.fill").foregroundStyle(.orange)
+                        Text("\(request.clientName) wants to connect")
+                        Spacer()
+                        Text("Review").foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(8)
+                .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            }
+
             if !model.isConfigured {
                 Text("Add your relay URL and secret in Settings to get started.")
                     .font(.callout)

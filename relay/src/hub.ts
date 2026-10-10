@@ -1,6 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
+import type { Pairing } from "./consent";
+import { OWNER, oauthApi } from "./oauth";
 import {
+	type ClientSummary,
 	type HeaderList,
+	type PairingInfo,
 	type RelayToHost,
 	PING,
 	PONG,
@@ -10,6 +14,8 @@ import {
 } from "./protocol";
 
 const START_TIMEOUT_MS = 60_000;
+// As long as the consent page's handle stays valid.
+const PAIRING_TTL_MS = 10 * 60_000;
 const MAX_REQUEST_BODY = 8 * 1024 * 1024;
 
 // Headers that describe this hop, or credentials meant for the relay, never the host.
@@ -28,6 +34,16 @@ const STRIP_REQUEST = new Set([
 ]);
 const STRIP_RESPONSE = new Set(["connection", "content-length", "keep-alive", "transfer-encoding", "upgrade"]);
 const NULL_BODY_STATUS = new Set([101, 204, 205, 304]);
+
+interface PairingRecord extends PairingInfo {
+	code: string;
+	/** SHA-256 of the consent page's handle: the approval only completes that page. */
+	handleHash: string;
+	state: "pending" | "approved" | "denied";
+	expiresAt: number;
+}
+
+export type PairingState = PairingRecord["state"] | "expired" | "offline";
 
 interface Pending {
 	ws: WebSocket;
@@ -52,15 +68,116 @@ export class Hub extends DurableObject<Env> {
 	}
 
 	override async fetch(request: Request): Promise<Response> {
-		if (new URL(request.url).pathname === "/agent") return this.acceptHost();
+		const url = new URL(request.url);
+		if (url.pathname === "/agent") return this.acceptHost(url.origin);
 		return this.forward(request);
 	}
 
-	private acceptHost(): Response {
+	private async acceptHost(origin: string): Promise<Response> {
 		for (const old of this.ctx.getWebSockets()) old.close(4000, "replaced");
+		// OAuth helpers need the public origin; the host's connection is where we learn it.
+		await this.ctx.storage.put("origin", origin);
 		const { 0: client, 1: server } = new WebSocketPair();
 		this.ctx.acceptWebSocket(server);
+		// Pairings started while the host was away still need an answer.
+		for (const [key, record] of await this.ctx.storage.list<PairingRecord>({ prefix: "pair:" })) {
+			if (record.state === "pending" && record.expiresAt > Date.now()) {
+				this.sendPairRequest(server, key.slice("pair:".length), record);
+			}
+		}
 		return new Response(null, { status: 101, webSocket: client });
+	}
+
+	// MARK: Pairing (called by the Worker's /authorize handlers)
+
+	async startPairing(info: PairingInfo, handleHash: string): Promise<Pairing> {
+		const ws = this.host();
+		if (!ws) return { offline: true };
+		const id = crypto.randomUUID();
+		const code = String(crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000).padStart(6, "0");
+		const record: PairingRecord = { ...info, code, handleHash, state: "pending", expiresAt: Date.now() + PAIRING_TTL_MS };
+		await this.ctx.storage.put(`pair:${id}`, record);
+		this.sendPairRequest(ws, id, record);
+		return { id, code };
+	}
+
+	async pairingStatus(id: string): Promise<PairingState> {
+		const record = await this.ctx.storage.get<PairingRecord>(`pair:${id}`);
+		if (!record || record.expiresAt <= Date.now()) return "expired";
+		if (record.state === "pending" && !this.host()) return "offline";
+		return record.state;
+	}
+
+	/** Completes an approved pairing, once, for the consent page it was started from. */
+	async consumePairing(id: string, handleHash: string): Promise<PairingInfo | null> {
+		const record = await this.ctx.storage.get<PairingRecord>(`pair:${id}`);
+		if (!record || record.state !== "approved" || record.handleHash !== handleHash || record.expiresAt <= Date.now()) {
+			return null;
+		}
+		await this.ctx.storage.delete(`pair:${id}`);
+		const { client_name, client_domain, redirect_host, loopback } = record;
+		return { client_name, client_domain, redirect_host, loopback };
+	}
+
+	/** Tells the host its list of clients changed. */
+	async clientsChanged(): Promise<void> {
+		const ws = this.host();
+		if (ws) await this.sendClients(ws);
+	}
+
+	private sendPairRequest(ws: WebSocket, id: string, record: PairingRecord): void {
+		const { code, client_name, client_domain, redirect_host, loopback } = record;
+		this.send(ws, { type: "pair_request", id, code, client_name, client_domain, redirect_host, loopback });
+	}
+
+	private async decidePairing(id: string, allow: boolean): Promise<void> {
+		const key = `pair:${id}`;
+		const record = await this.ctx.storage.get<PairingRecord>(key);
+		if (!record || record.state !== "pending") return;
+		await this.ctx.storage.put(key, { ...record, state: allow ? "approved" : "denied" });
+	}
+
+	// MARK: Clients
+
+	private async sendClients(ws: WebSocket): Promise<void> {
+		const oauth = await this.oauth();
+		if (!oauth) return;
+		const items: ClientSummary[] = [];
+		let cursor: string | undefined;
+		do {
+			const page = await oauth.listUserGrants(OWNER, { cursor });
+			for (const grant of page.items) {
+				items.push({
+					grant_id: grant.id,
+					client_id: grant.clientId,
+					client_name: grant.metadata?.client_name ?? grant.clientId,
+					client_domain: grant.metadata?.client_domain,
+					created_at: grant.createdAt,
+				});
+			}
+			cursor = page.cursor;
+		} while (cursor);
+		this.send(ws, { type: "clients", items });
+	}
+
+	private async revokeClient(ws: WebSocket, grantId: string): Promise<void> {
+		const oauth = await this.oauth();
+		if (!oauth) return;
+		await oauth.revokeGrant(grantId, OWNER);
+		await this.sendClients(ws);
+	}
+
+	private async oauth() {
+		const origin = await this.ctx.storage.get<string>("origin");
+		return origin ? oauthApi(origin, this.env) : undefined;
+	}
+
+	private send(ws: WebSocket, frame: RelayToHost): void {
+		try {
+			ws.send(JSON.stringify(frame));
+		} catch {
+			// host gone; it gets current state when it reconnects
+		}
 	}
 
 	private host(): WebSocket | undefined {
@@ -117,10 +234,16 @@ export class Hub extends DurableObject<Env> {
 		});
 	}
 
-	override webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): void {
+	override async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
 		const frame = parseHostFrame(raw);
 		if (!frame) return;
 		switch (frame.type) {
+			case "pair_decision":
+				return this.decidePairing(frame.id, frame.allow);
+			case "list_clients":
+				return this.sendClients(ws);
+			case "revoke_client":
+				return this.revokeClient(ws, frame.grant_id);
 			case "hello":
 				ws.serializeAttachment({ proto: frame.proto, app_version: frame.app_version });
 				return;

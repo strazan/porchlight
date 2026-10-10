@@ -111,12 +111,12 @@ func sseMessages(_ body: String) -> [JSONValue] {
         let router = await makeRouter([fakeConfig("fake")])
         defer { Task { await router.stopAll() } }
 
-        let initialized = await post(router, initialize, path: "/s/fake/mcp")
+        let initialized = await post(router, initialize, path: "/mcp/fake")
         #expect(await initialized.status == 200)
         #expect(await initialized.json?["id"] == .int(0))
         #expect(await initialized.json?["result"]?["serverInfo"]?["name"] == .string("fake"))
 
-        let list = await post(router, #"{"jsonrpc":"2.0","id":"abc","method":"tools/list"}"#, path: "/s/fake/mcp")
+        let list = await post(router, #"{"jsonrpc":"2.0","id":"abc","method":"tools/list"}"#, path: "/mcp/fake")
         #expect(await list.json?["id"] == .string("abc"))
         #expect(await list.header("content-type") == "application/json")
     }
@@ -125,8 +125,8 @@ func sseMessages(_ body: String) -> [JSONValue] {
         let router = await makeRouter([fakeConfig("fake")])
         defer { Task { await router.stopAll() } }
 
-        async let a = post(router, callTool(id: 1, "echo", #"{"who":"a"}"#), path: "/s/fake/mcp")
-        async let b = post(router, callTool(id: 1, "echo", #"{"who":"b"}"#), path: "/s/fake/mcp")
+        async let a = post(router, callTool(id: 1, "echo", #"{"who":"a"}"#), path: "/mcp/fake")
+        async let b = post(router, callTool(id: 1, "echo", #"{"who":"b"}"#), path: "/mcp/fake")
         let (ra, rb) = await (a, b)
 
         let ea = toolText(await ra.json), eb = toolText(await rb.json)
@@ -141,11 +141,11 @@ func sseMessages(_ body: String) -> [JSONValue] {
     @Test func clientInitializeIsAnsweredFromPorchlightsHandshake() async {
         let router = await makeRouter([fakeConfig("fake")])
         defer { Task { await router.stopAll() } }
-        await post(router, initialize, path: "/s/fake/mcp")
-        let again = await post(router, initialize.replacingOccurrences(of: #""id":0"#, with: #""id":9"#), path: "/s/fake/mcp")
+        await post(router, initialize, path: "/mcp/fake")
+        let again = await post(router, initialize.replacingOccurrences(of: #""id":0"#, with: #""id":9"#), path: "/mcp/fake")
         #expect(await again.json?["id"] == .int(9))
 
-        let stats = await post(router, callTool(id: 2, "stats"), path: "/s/fake/mcp")
+        let stats = await post(router, callTool(id: 2, "stats"), path: "/mcp/fake")
         #expect(toolText(await stats.json)?["initialize_count"] == .int(1))
     }
 
@@ -154,7 +154,7 @@ func sseMessages(_ body: String) -> [JSONValue] {
         defer { Task { await router.stopAll() } }
 
         let call = rpc(5, "tools/call", #"{"name":"slow","arguments":{"seconds":0.1},"_meta":{"progressToken":"tok"}}"#)
-        let response = await post(router, call, path: "/s/fake/mcp", accept: "application/json, text/event-stream")
+        let response = await post(router, call, path: "/mcp/fake", accept: "application/json, text/event-stream")
         #expect(await response.status == 200)
         #expect(await response.header("content-type") == "text/event-stream")
         #expect(await response.ended)
@@ -175,11 +175,11 @@ func sseMessages(_ body: String) -> [JSONValue] {
         await router.apply([fakeConfig("fake")])
         defer { Task { await router.stopAll() } }
 
-        let crashed = await post(router, callTool(id: 3, "crash"), path: "/s/fake/mcp")
+        let crashed = await post(router, callTool(id: 3, "crash"), path: "/mcp/fake")
         #expect(await crashed.json?["error"]?["message"] == .string("fake exited"))
 
         // The client never re-initializes; Porchlight does it for the new process.
-        let stats = await post(router, callTool(id: 4, "stats"), path: "/s/fake/mcp")
+        let stats = await post(router, callTool(id: 4, "stats"), path: "/mcp/fake")
         #expect(toolText(await stats.json)?["initialize_count"] == .int(1))
         #expect(await stats.json?["id"] == .int(4))
         #expect(statuses.value.contains(.failed("Exited with status 1")))
@@ -190,16 +190,16 @@ func sseMessages(_ body: String) -> [JSONValue] {
         let router = await makeRouter([fakeConfig("fake")])
         defer { Task { await router.stopAll() } }
 
-        let notification = await post(router, #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#, path: "/s/fake/mcp")
+        let notification = await post(router, #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#, path: "/mcp/fake")
         #expect(await notification.status == 202)
 
-        let badJSON = await post(router, "{nope", path: "/s/fake/mcp")
+        let badJSON = await post(router, "{nope", path: "/mcp/fake")
         #expect(await badJSON.status == 400)
         #expect(await badJSON.json?["error"]?["code"] == .int(-32700))
 
-        let unknown = await post(router, initialize, path: "/s/other/mcp")
+        let unknown = await post(router, initialize, path: "/mcp/other")
         #expect(await unknown.status == 404)
-        let withQuery = await post(router, initialize, path: "/s/fake/mcp?x=1")
+        let withQuery = await post(router, initialize, path: "/mcp/fake?x=1")
         #expect(await withQuery.status == 200)
 
         let get = RecordedResponse()
@@ -280,10 +280,10 @@ func sseMessages(_ body: String) -> [JSONValue] {
     @Test func appliesConfigChangesLive() async {
         let router = await makeRouter([fakeConfig("alpha"), fakeConfig("beta")])
         defer { Task { await router.stopAll() } }
-        #expect(await post(router, initialize, path: "/s/beta/mcp").status == 200)
+        #expect(await post(router, initialize, path: "/mcp/beta").status == 200)
 
         await router.apply([fakeConfig("alpha"), fakeConfig("beta", enabled: false)])
-        #expect(await post(router, initialize, path: "/s/beta/mcp").status == 404)
+        #expect(await post(router, initialize, path: "/mcp/beta").status == 404)
         let list = await post(router, rpc(1, "tools/list"))
         #expect(names(await list.json, "tools") == ["alpha__echo"])
     }
@@ -398,6 +398,27 @@ func sseMessages(_ body: String) -> [JSONValue] {
             Issue.record("expected cancel")
         }
         if case .pong = RelayFrame.decode(RelayProtocol.pong) {} else { Issue.record("expected pong") }
+    }
+
+    @Test func decodesPairingAndClientFrames() throws {
+        let pairing = RelayFrame.decode(#"{"type":"pair_request","id":"p1","code":"048213","client_name":"Claude","client_domain":"claude.ai","redirect_host":"claude.ai","loopback":false}"#)
+        guard case .event(.pairingRequested(let request)) = pairing else {
+            Issue.record("expected pairing request, got \(pairing)")
+            return
+        }
+        #expect(request.id == "p1")
+        #expect(request.formattedCode == "048 213")
+        #expect(request.clientDomain == "claude.ai")
+        #expect(!request.loopback)
+
+        let clients = RelayFrame.decode(#"{"type":"clients","items":[{"grant_id":"g1","client_id":"https://claude.ai/oauth/client","client_name":"Claude","created_at":1760000000}]}"#)
+        guard case .event(.clientsChanged(let items)) = clients else {
+            Issue.record("expected clients, got \(clients)")
+            return
+        }
+        #expect(items.map(\.id) == ["g1"])
+        #expect(items.first?.createdAt == Date(timeIntervalSince1970: 1_760_000_000))
+        #expect(HostFrame.pairDecision(id: "p1", allow: true).contains(#""allow":true"#))
     }
 
     @Test func splitsCommandLines() {

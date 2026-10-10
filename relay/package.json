@@ -8,10 +8,12 @@
     "deploy": "wrangler deploy",
     "types": "wrangler types",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "node e2e/sdk-oauth.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",
     "wrangler": "^4.149.0"
@@ -19,5 +21,8 @@
   "allowScripts": {
     "workerd@1.20261006.1": true,
     "esbuild@0.28.2": true
+  },
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^1.2.3"
   }
 }
