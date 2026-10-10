@@ -36,7 +36,7 @@ chunks are base64 (`*_b64`) so that frames stay valid JSON.
 |---|---|---|
 | `req` | `id`, `method`, `path`, `headers` (`[[name, value], …]`), `body_b64` | An incoming HTTP request. `path` includes the query string. |
 | `cancel` | `id` | The client went away; stop work and send nothing more for `id`. |
-| `pair_request` | `id`, `code`, `client_name`, `client_domain?`, `redirect_host`, `loopback` | An app is on the consent page. Show its details and `code` (the page shows the same code) and answer with `pair_decision`. Re-sent on reconnect while pending; expires after 10 minutes. |
+| `pair_request` | `id`, `code`, `client_id`, `client_name`, `client_domain?`, `redirect_host`, `loopback` | An app is on the consent page. Show its details and `code` (the page shows the same code) and answer with `pair_decision`. Re-sent on reconnect while pending; expires after 10 minutes. |
 | `clients` | `items: [{grant_id, client_id, client_name, client_domain?, created_at}]` | The apps that currently have access. Sent after `list_clients`, after a pairing completes, and after `revoke_client`. |
 | `pong` | — | Reply to the host's `ping`. |
 

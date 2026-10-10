@@ -14,6 +14,8 @@ public actor Router: HTTPHandler {
     private let aggregator = Aggregator()
     private var running: [String: (config: ServerConfig, upstream: any Upstream)] = [:]
     private var order: [String] = []
+    /// Client ID → the servers that app may use. Apps not listed may use all of them.
+    private var clientAccess: [String: Set<String>] = [:]
     /// server → tool → (read-only, title), from the servers' tool lists.
     private var annotations: [String: [String: (readOnly: Bool, title: String?)]] = [:]
 
@@ -154,15 +156,21 @@ public actor Router: HTTPHandler {
 
     public func handle(_ request: HTTPRequest, _ responder: HTTPResponder) async {
         let client = ClientIdentity(headers: request)
+        let allowed = client.id.isEmpty ? nil : clientAccess[client.id]
         let route = request.route
         if route == "/mcp" {
-            let endpoint = GatedEndpoint(inner: aggregator, scope: .all, client: client, router: self)
+            let inner = ScopedAggregator(aggregator: aggregator, allowed: allowed)
+            let endpoint = GatedEndpoint(inner: inner, scope: .all, client: client, allowed: allowed, router: self)
             return await StreamableHTTP.serve(request, responder, endpoint: endpoint)
         }
         let parts = route.split(separator: "/")
         if parts.count == 2, parts[0] == "mcp", let entry = running[String(parts[1])] {
+            if let allowed, !allowed.contains(entry.config.name) {
+                let message = "\(client.name) doesn't have access to \(entry.config.name). Change that in Porchlight → Settings → Apps.\n"
+                return await responder.respond(403, [("content-type", "text/plain")], body: Data(message.utf8))
+            }
             let inner = PassthroughEndpoint(upstream: entry.upstream)
-            let endpoint = GatedEndpoint(inner: inner, scope: .server(entry.config.name), client: client, router: self)
+            let endpoint = GatedEndpoint(inner: inner, scope: .server(entry.config.name), client: client, allowed: allowed, router: self)
             return await StreamableHTTP.serve(request, responder, endpoint: endpoint)
         }
         await responder.respond(404, [("content-type", "text/plain")], body: Data("No such server\n".utf8))
@@ -223,8 +231,14 @@ public actor Router: HTTPHandler {
         return filtered
     }
 
-    func resolveTool(_ alias: String) async -> (server: String, tool: String)? {
-        await aggregator.resolveTool(alias)
+    func resolveTool(_ alias: String, allowed: Set<String>?) async -> (server: String, tool: String)? {
+        await aggregator.resolveTool(alias, allowed: allowed)
+    }
+
+    /// Which servers each app may use: client ID → server names. Apps not in the map may
+    /// use all servers, including ones added later.
+    public func setClientAccess(_ access: [String: Set<String>]) {
+        clientAccess = access
     }
 
     /// A tool's read-only hint and title, listing the server's tools if they aren't known yet.

@@ -16,6 +16,8 @@ import {
 const START_TIMEOUT_MS = 60_000;
 // As long as the consent page's handle stays valid.
 const PAIRING_TTL_MS = 10 * 60_000;
+// KV listings can miss writes (new or revoked grants) for up to a minute; bridge longer.
+const KV_LAG_MS = 5 * 60_000;
 const MAX_REQUEST_BODY = 8 * 1024 * 1024;
 
 // Headers that describe this hop, or credentials meant for the relay, never the host.
@@ -115,19 +117,23 @@ export class Hub extends DurableObject<Env> {
 			return null;
 		}
 		await this.ctx.storage.delete(`pair:${id}`);
-		const { client_name, client_domain, redirect_host, loopback } = record;
-		return { client_name, client_domain, redirect_host, loopback };
+		const { client_id, client_name, client_domain, redirect_host, loopback } = record;
+		return { client_id, client_name, client_domain, redirect_host, loopback };
 	}
 
-	/** Tells the host its list of clients changed. */
-	async clientsChanged(): Promise<void> {
+	/**
+	 * Tells the host its list of clients changed. `added` is a grant just issued: KV lists
+	 * can take a minute to include it, so it's remembered here until they do.
+	 */
+	async clientsChanged(added?: ClientSummary): Promise<void> {
+		if (added) await this.ctx.storage.put(`recent:${added.client_id}`, { ...added, recorded: Date.now() });
 		const ws = this.host();
 		if (ws) await this.sendClients(ws);
 	}
 
 	private sendPairRequest(ws: WebSocket, id: string, record: PairingRecord): void {
-		const { code, client_name, client_domain, redirect_host, loopback } = record;
-		this.send(ws, { type: "pair_request", id, code, client_name, client_domain, redirect_host, loopback });
+		const { code, client_id, client_name, client_domain, redirect_host, loopback } = record;
+		this.send(ws, { type: "pair_request", id, code, client_id, client_name, client_domain, redirect_host, loopback });
 	}
 
 	private async decidePairing(id: string, allow: boolean): Promise<void> {
@@ -143,10 +149,17 @@ export class Hub extends DurableObject<Env> {
 		const oauth = await this.oauth();
 		if (!oauth) return;
 		const items: ClientSummary[] = [];
+		const now = Date.now();
+		const revoked = new Set<string>();
+		for (const [key, at] of await this.ctx.storage.list<number>({ prefix: "revoked:" })) {
+			if (now - at < KV_LAG_MS) revoked.add(key.slice("revoked:".length));
+			else await this.ctx.storage.delete(key);
+		}
 		let cursor: string | undefined;
 		do {
 			const page = await oauth.listUserGrants(OWNER, { cursor });
 			for (const grant of page.items) {
+				if (revoked.has(grant.id)) continue; // revoked; KV hasn't caught up
 				items.push({
 					grant_id: grant.id,
 					client_id: grant.clientId,
@@ -157,6 +170,16 @@ export class Hub extends DurableObject<Env> {
 			}
 			cursor = page.cursor;
 		} while (cursor);
+		// Grants issued moments ago, which KV may not list yet.
+		for (const [key, recent] of await this.ctx.storage.list<ClientSummary & { recorded: number }>({ prefix: "recent:" })) {
+			const listed = items.some((item) => item.client_id === recent.client_id);
+			if (listed || revoked.has(recent.grant_id) || now - recent.recorded >= KV_LAG_MS) {
+				await this.ctx.storage.delete(key);
+			} else {
+				const { recorded: _, ...summary } = recent;
+				items.push(summary);
+			}
+		}
 		this.send(ws, { type: "clients", items });
 	}
 
@@ -164,6 +187,7 @@ export class Hub extends DurableObject<Env> {
 		const oauth = await this.oauth();
 		if (!oauth) return;
 		await oauth.revokeGrant(grantId, OWNER);
+		await this.ctx.storage.put(`revoked:${grantId}`, Date.now());
 		await this.sendClients(ws);
 	}
 

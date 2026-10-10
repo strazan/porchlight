@@ -83,6 +83,7 @@ private struct PromptView: View {
 private struct PairingView: View {
     @Environment(AppModel.self) private var model
     let request: PairingRequest
+    @State private var access: Set<String>?
 
     var body: some View {
             VStack(spacing: 14) {
@@ -121,7 +122,12 @@ private struct PairingView: View {
                 }
                 .padding(.vertical, 4)
 
-                Text("It will be able to use all your enabled servers. You can revoke access in Settings.")
+                if !request.clientID.isEmpty {
+                    ServerAccessPicker(servers: model.servers.filter(\.enabled).map(\.name), selection: $access)
+                        .padding(12)
+                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+                }
+                Text("You can change its access or revoke it in Settings → Apps.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -129,13 +135,14 @@ private struct PairingView: View {
                 HStack {
                     Button("Deny", role: .cancel) { model.decide(request, allow: false) }
                         .keyboardShortcut(.cancelAction)
-                    Button("Allow") { model.decide(request, allow: true) }
+                    Button("Allow") { model.decide(request, allow: true, servers: access) }
                         .keyboardShortcut(.defaultAction)
                 }
                 .controlSize(.large)
 
                 WaitingCount(count: model.pendingPairings.count + model.pendingApprovals.count - 1)
             }
+            .onChange(of: request.id) { access = nil }
     }
 }
 

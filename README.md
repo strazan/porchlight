@@ -83,8 +83,18 @@ connector in Claude, ChatGPT or any MCP client that supports OAuth. When it conn
 your browser shows a code and Porchlight asks you to approve the app with the same code.
 Apps you've approved are listed under Settings → Apps, where you can revoke them.
 
-> Only connect servers you'd be comfortable with a cloud model driving: an approved app
-> can use every enabled server.
+## Staying in control
+
+- **Approve each app.** A new connection shows a code in the browser and the same code
+  on your Mac; nothing connects until you allow it.
+- **Choose what each app can use.** When you approve an app, pick all servers or just
+  some. Change it any time under Settings → Apps, or revoke the app entirely.
+- **Approve tool calls.** By default Porchlight asks before any tool that doesn't
+  declare itself read-only, showing the app, tool and arguments: allow once, always
+  allow, or deny. Per server you can instead run tools without asking or ask before
+  every tool, and set individual tools to Allow, Ask or Block (blocked tools are hidden).
+- **See what happened.** The Activity window lists every request: app, tool, server,
+  time taken and result.
 
 The relay fits in Cloudflare's free tier. The Durable Object hibernates while idle,
 and keepalive pings are answered without waking it.
@@ -110,7 +120,7 @@ and keepalive pings are answered without waking it.
 - [x] **M1**: OAuth 2.1 at the relay, where you approve new clients on your Mac
 - [x] **M2**: menubar app: manage servers, import from Claude Desktop/Claude Code/Cursor configs, one combined endpoint plus one per server
 - [x] **M3**: one-click deploy to your Cloudflare account from the app, launch at login, reconnect on wake and network changes
-- [ ] **M4**: per-tool policies (allow / ask / deny), approvals, activity log, revoke clients
+- [x] **M4**: per-tool permissions with approvals, per-app server access, activity log, revoke apps
 - [ ] **M5**: signed releases, Homebrew cask, self-hosted relay (Docker)
 
 ## Development

@@ -57,6 +57,13 @@ final class AppModel {
     private(set) var pendingPairings: [PairingRequest] = []
     /// Apps that have been granted access through the relay.
     private(set) var clients: [PairedClient] = []
+    /// Client ID → the servers that app may use. Apps not listed may use all servers.
+    private(set) var clientAccess: [String: Set<String>] = [:] {
+        didSet {
+            defaults.set(clientAccess.mapValues { Array($0).sorted() }, forKey: "clientAccess")
+            pushClientAccess()
+        }
+    }
     /// Tool calls waiting for the owner to allow or deny them, oldest first.
     private(set) var pendingApprovals: [ToolApprovalRequest] = []
     /// Recent requests, oldest first.
@@ -84,6 +91,7 @@ final class AppModel {
         relayURL = defaults.string(forKey: "relayURL") ?? "http://localhost:8787"
         secret = Keychain.read("agentSecret") ?? ""
         keepAwake = defaults.bool(forKey: "keepAwake")
+        clientAccess = (defaults.dictionary(forKey: "clientAccess") as? [String: [String]] ?? [:]).mapValues(Set.init)
         deployment = defaults.data(forKey: "deployment").flatMap { try? JSONDecoder().decode(Deployment.self, from: $0) }
         servers = store.load() ?? migrateSingleServer()
         // Older editors could save a whole "Name: value" header line as the name.
@@ -162,12 +170,21 @@ final class AppModel {
 
     func update(_ server: ServerConfig) {
         guard let index = servers.firstIndex(where: { $0.id == server.id }) else { return }
+        let oldName = servers[index].name
         servers[index] = server
+        if oldName != server.name {
+            // Apps limited to this server keep access under its new name.
+            clientAccess = clientAccess.mapValues { names in
+                names.contains(oldName) ? names.subtracting([oldName]).union([server.name]) : names
+            }
+        }
         serversChanged()
     }
 
     func remove(_ ids: Set<ServerConfig.ID>) {
+        let removed = Set(servers.filter { ids.contains($0.id) }.map(\.name))
         servers.removeAll { ids.contains($0.id) }
+        clientAccess = clientAccess.mapValues { $0.subtracting(removed) }
         serversChanged()
     }
 
@@ -245,6 +262,7 @@ final class AppModel {
             }
         )
         await router.apply(servers)
+        await router.setClientAccess(clientAccess)
         await router.warmUp()
         let client = RelayClient(
             url: url,
@@ -385,8 +403,10 @@ final class AppModel {
 
     // MARK: Pairing and clients
 
-    func decide(_ request: PairingRequest, allow: Bool) {
+    /// `servers`: when allowing, the servers the app may use, or nil for all of them.
+    func decide(_ request: PairingRequest, allow: Bool, servers: Set<String>? = nil) {
         pendingPairings.removeAll { $0.id == request.id }
+        if allow, !request.clientID.isEmpty { setAccess(clientID: request.clientID, servers: servers) }
         promptPanel.update()
         log("\(allow ? "Approved" : "Declined") \(request.clientName)")
         guard let client else { return }
@@ -395,8 +415,30 @@ final class AppModel {
 
     func revoke(_ paired: PairedClient) {
         log("Revoked \(paired.clientName)")
+        clientAccess[paired.clientID] = nil
         guard let client else { return }
         Task { await client.revokeClient(paired.id) }
+    }
+
+    /// Asks the relay for the current list of apps.
+    func refreshClients() {
+        guard let client else { return }
+        Task { await client.refreshClients() }
+    }
+
+    /// The servers an app may use, or nil if it may use all of them.
+    func access(for clientID: String) -> Set<String>? {
+        clientAccess[clientID]
+    }
+
+    func setAccess(clientID: String, servers: Set<String>?) {
+        clientAccess[clientID] = servers
+    }
+
+    private func pushClientAccess() {
+        guard let router else { return }
+        let access = clientAccess
+        Task { await router.setClientAccess(access) }
     }
 
     private func relayEvent(_ event: RelayEvent) {

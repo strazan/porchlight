@@ -86,6 +86,7 @@ async function showAuthorize(request: Request, env: Env, origin: string): Promis
 	const details = await oauth.describeConsent(authRequest);
 	const consent = await oauth.beginConsent(authRequest);
 	const info: PairingInfo = {
+		client_id: authRequest.clientId,
 		client_name: details.clientName,
 		client_domain: details.clientDomain,
 		redirect_host: details.redirectHost,
@@ -117,9 +118,22 @@ async function submitAuthorize(request: Request, env: Env, origin: string): Prom
 		scope: approved.request.scope,
 		props: { clientName: pairing.client_name } satisfies GrantProps,
 	});
-	await hub(env).clientsChanged();
+	// KV listings lag new writes, so tell the hub about this grant directly.
+	await hub(env).clientsChanged({
+		grant_id: grantIdFromRedirect(redirectTo),
+		client_id: pairing.client_id,
+		client_name: pairing.client_name,
+		client_domain: pairing.client_domain,
+		created_at: Math.floor(Date.now() / 1000),
+	});
 	approved.headers.set("location", redirectTo);
 	return new Response(null, { status: 302, headers: approved.headers });
+}
+
+/** Authorization codes are `userId:grantId:secret`; "" if that ever changes. */
+function grantIdFromRedirect(redirectTo: string): string {
+	const parts = new URL(redirectTo).searchParams.get("code")?.split(":") ?? [];
+	return parts.length === 3 ? parts[1]! : "";
 }
 
 function html(body: string, status = 200): Response {

@@ -5374,6 +5374,7 @@ async function showAuthorize(request, env, origin) {
   const details = await oauth.describeConsent(authRequest);
   const consent = await oauth.beginConsent(authRequest);
   const info = {
+    client_id: authRequest.clientId,
     client_name: details.clientName,
     client_domain: details.clientDomain,
     redirect_host: details.redirectHost,
@@ -5402,11 +5403,22 @@ async function submitAuthorize(request, env, origin) {
     scope: approved.request.scope,
     props: { clientName: pairing.client_name }
   });
-  await hub(env).clientsChanged();
+  await hub(env).clientsChanged({
+    grant_id: grantIdFromRedirect(redirectTo),
+    client_id: pairing.client_id,
+    client_name: pairing.client_name,
+    client_domain: pairing.client_domain,
+    created_at: Math.floor(Date.now() / 1e3)
+  });
   approved.headers.set("location", redirectTo);
   return new Response(null, { status: 302, headers: approved.headers });
 }
 __name(submitAuthorize, "submitAuthorize");
+function grantIdFromRedirect(redirectTo) {
+  const parts = new URL(redirectTo).searchParams.get("code")?.split(":") ?? [];
+  return parts.length === 3 ? parts[1] : "";
+}
+__name(grantIdFromRedirect, "grantIdFromRedirect");
 function html(body, status = 200) {
   return new Response(body, {
     status,
@@ -5474,6 +5486,7 @@ __name(fromBase64, "fromBase64");
 import { DurableObject } from "cloudflare:workers";
 var START_TIMEOUT_MS = 6e4;
 var PAIRING_TTL_MS = 10 * 6e4;
+var KV_LAG_MS = 5 * 6e4;
 var MAX_REQUEST_BODY = 8 * 1024 * 1024;
 var STRIP_REQUEST = /* @__PURE__ */ new Set([
   "authorization",
@@ -5542,17 +5555,21 @@ var Hub = class extends DurableObject {
       return null;
     }
     await this.ctx.storage.delete(`pair:${id}`);
-    const { client_name, client_domain, redirect_host, loopback } = record;
-    return { client_name, client_domain, redirect_host, loopback };
+    const { client_id, client_name, client_domain, redirect_host, loopback } = record;
+    return { client_id, client_name, client_domain, redirect_host, loopback };
   }
-  /** Tells the host its list of clients changed. */
-  async clientsChanged() {
+  /**
+   * Tells the host its list of clients changed. `added` is a grant just issued: KV lists
+   * can take a minute to include it, so it's remembered here until they do.
+   */
+  async clientsChanged(added) {
+    if (added) await this.ctx.storage.put(`recent:${added.client_id}`, { ...added, recorded: Date.now() });
     const ws = this.host();
     if (ws) await this.sendClients(ws);
   }
   sendPairRequest(ws, id, record) {
-    const { code, client_name, client_domain, redirect_host, loopback } = record;
-    this.send(ws, { type: "pair_request", id, code, client_name, client_domain, redirect_host, loopback });
+    const { code, client_id, client_name, client_domain, redirect_host, loopback } = record;
+    this.send(ws, { type: "pair_request", id, code, client_id, client_name, client_domain, redirect_host, loopback });
   }
   async decidePairing(id, allow) {
     const key = `pair:${id}`;
@@ -5565,10 +5582,17 @@ var Hub = class extends DurableObject {
     const oauth = await this.oauth();
     if (!oauth) return;
     const items = [];
+    const now = Date.now();
+    const revoked = /* @__PURE__ */ new Set();
+    for (const [key, at] of await this.ctx.storage.list({ prefix: "revoked:" })) {
+      if (now - at < KV_LAG_MS) revoked.add(key.slice("revoked:".length));
+      else await this.ctx.storage.delete(key);
+    }
     let cursor;
     do {
       const page2 = await oauth.listUserGrants(OWNER, { cursor });
       for (const grant of page2.items) {
+        if (revoked.has(grant.id)) continue;
         items.push({
           grant_id: grant.id,
           client_id: grant.clientId,
@@ -5579,12 +5603,22 @@ var Hub = class extends DurableObject {
       }
       cursor = page2.cursor;
     } while (cursor);
+    for (const [key, recent] of await this.ctx.storage.list({ prefix: "recent:" })) {
+      const listed = items.some((item) => item.client_id === recent.client_id);
+      if (listed || revoked.has(recent.grant_id) || now - recent.recorded >= KV_LAG_MS) {
+        await this.ctx.storage.delete(key);
+      } else {
+        const { recorded: _, ...summary } = recent;
+        items.push(summary);
+      }
+    }
     this.send(ws, { type: "clients", items });
   }
   async revokeClient(ws, grantId) {
     const oauth = await this.oauth();
     if (!oauth) return;
     await oauth.revokeGrant(grantId, OWNER);
+    await this.ctx.storage.put(`revoked:${grantId}`, Date.now());
     await this.sendClients(ws);
   }
   async oauth() {

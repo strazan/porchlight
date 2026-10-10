@@ -113,6 +113,12 @@ private struct ServerRow: View {
 private struct ClientsTab: View {
     @Environment(AppModel.self) private var model
     @State private var revoking: PairedClient?
+    @State private var editingAccess: PairedClient?
+
+    private func accessSummary(_ client: PairedClient) -> String {
+        guard let servers = model.access(for: client.clientID) else { return "Access: all servers" }
+        return servers.isEmpty ? "Access: no servers" : "Access: \(servers.sorted().joined(separator: ", "))"
+    }
 
     var body: some View {
         Group {
@@ -145,14 +151,32 @@ private struct ClientsTab: View {
                             Text("Connected \(client.createdAt, format: .relative(presentation: .named))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            Text(accessSummary(client))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button("Revoke…") { revoking = client }
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Button("Access…") { editingAccess = client }
+                            Button("Revoke…") { revoking = client }
+                        }
                     }
                     .padding(.vertical, 3)
                 }
             }
         }
+        .sheet(item: $editingAccess) { client in AccessEditor(client: client) }
+        .safeAreaInset(edge: .bottom) {
+            if model.isConnected {
+                HStack {
+                    Spacer()
+                    Button("Refresh") { model.refreshClients() }
+                }
+                .buttonStyle(.borderless)
+                .padding(8)
+            }
+        }
+        .onAppear { model.refreshClients() }
         .confirmationDialog(
             "Revoke access for \(revoking?.clientName ?? "this app")?",
             isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
@@ -162,6 +186,33 @@ private struct ClientsTab: View {
         } message: { _ in
             Text("It stops working right away. To use it again, connect it again and approve it here.")
         }
+    }
+}
+
+private struct AccessEditor: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let client: PairedClient
+    @State private var access: Set<String>?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("What can \(client.clientName) use?").font(.title3.weight(.semibold))
+            ServerAccessPicker(servers: model.servers.map(\.name), selection: $access)
+            Spacer(minLength: 0)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    model.setAccess(clientID: client.clientID, servers: access)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 380, height: 360)
+        .onAppear { access = model.access(for: client.clientID) }
     }
 }
 

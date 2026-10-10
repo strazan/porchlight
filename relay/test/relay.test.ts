@@ -1,4 +1,4 @@
-import { SELF } from "cloudflare:test";
+import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { type HostToRelay, type RelayToHost, fromBase64, toBase64 } from "../src/protocol";
 
@@ -204,8 +204,10 @@ describe("oauth", () => {
 			seen = req;
 			respond(send, req.id, 200, dec.decode(fromBase64(req.body_b64)), [["content-type", "application/json"]]);
 		});
-		const { access_token, request } = await pair(host, "Claude ☀️");
+		const { access_token, request, client_id } = await pair(host, "Claude ☀️");
+		const started = { client_id };
 		expect(request.client_name).toBe("Claude ☀️");
+		expect(request.client_id).toBe(started.client_id);
 		expect(request.redirect_host).toBe("client.test");
 		expect(request.code).toMatch(/^\d{6}$/);
 
@@ -281,6 +283,46 @@ describe("oauth", () => {
 		expect(after.items.map((item) => item.client_id)).not.toContain(client_id);
 		expect(after.items).toHaveLength(listed.items.length - 1);
 		expect((await mcp(access_token)).status).toBe(401);
+		host.ws.close();
+	});
+});
+
+describe("client list while KV lags", () => {
+	const hubStub = () => env.HUB.get(env.HUB.idFromName("default"));
+
+	it("lists a just-paired app once, with its grant id", async () => {
+		const host = await connectHost();
+		const { client_id } = await pair(host, "Fresh");
+		const listed = await host.next("clients");
+		const mine = listed.items.filter((item) => item.client_id === client_id);
+		expect(mine).toHaveLength(1);
+		expect(mine[0]!.grant_id).not.toBe("");
+		host.ws.close();
+	});
+
+	it("shows an app KV doesn't list yet", async () => {
+		const host = await connectHost();
+		await hubStub().clientsChanged({
+			grant_id: "g-lagging", client_id: "lagging-client", client_name: "Lagging", created_at: 1,
+		});
+		const listed = await host.next("clients", (f) => f.items.some((item) => item.client_id === "lagging-client"));
+		expect(listed.items.find((item) => item.client_id === "lagging-client")?.client_name).toBe("Lagging");
+		host.ws.close();
+	});
+
+	it("hides a revoked grant KV still lists", async () => {
+		const host = await connectHost();
+		const { client_id } = await pair(host, "Revoked");
+		const listed = await host.next("clients");
+		const grant = listed.items.find((item) => item.client_id === client_id)!;
+		// Pretend KV still lists the grant after revocation: only the tombstone hides it.
+		await runInDurableObject(hubStub(), async (_, state) => {
+			await state.storage.put(`revoked:${grant.grant_id}`, Date.now());
+			await state.storage.delete(`recent:${client_id}`);
+		});
+		host.send({ type: "list_clients" });
+		const after = await host.next("clients");
+		expect(after.items.map((item) => item.client_id)).not.toContain(client_id);
 		host.ws.close();
 	});
 });

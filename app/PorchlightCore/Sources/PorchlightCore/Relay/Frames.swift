@@ -70,6 +70,8 @@ public struct PairingRequest: Sendable, Identifiable, Equatable {
     public let id: String
     /// Also shown on the app's consent page, so the owner can match the two.
     public let code: String
+    /// The app's OAuth client ID (empty from relays older than this field).
+    public let clientID: String
     public let clientName: String
     /// The client's verified domain (for Client ID Metadata Document clients).
     public let clientDomain: String?
@@ -78,9 +80,10 @@ public struct PairingRequest: Sendable, Identifiable, Equatable {
     /// The tokens go to an app on the owner's computer.
     public let loopback: Bool
 
-    public init(id: String, code: String, clientName: String, clientDomain: String?, redirectHost: String, loopback: Bool) {
+    public init(id: String, code: String, clientID: String = "", clientName: String, clientDomain: String?, redirectHost: String, loopback: Bool) {
         self.id = id
         self.code = code
+        self.clientID = clientID
         self.clientName = clientName
         self.clientDomain = clientDomain
         self.redirectHost = redirectHost
@@ -145,7 +148,8 @@ enum RelayFrame {
                   let redirectHost = msg["redirect_host"]?.stringValue
             else { return .unknown }
             return .event(.pairingRequested(PairingRequest(
-                id: id, code: code, clientName: name, clientDomain: msg["client_domain"]?.stringValue,
+                id: id, code: code, clientID: msg["client_id"]?.stringValue ?? "",
+                clientName: name, clientDomain: msg["client_domain"]?.stringValue,
                 redirectHost: redirectHost, loopback: msg["loopback"] == .bool(true)
             )))
         case "clients":

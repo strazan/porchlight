@@ -11,6 +11,8 @@ struct GatedEndpoint: MCPEndpoint {
     let inner: any MCPEndpoint
     let scope: Scope
     let client: ClientIdentity
+    /// The servers this app may use, or nil for all.
+    let allowed: Set<String>?
     let router: Router
 
     func call(_ request: JSONValue, onProgress: ProgressSink?) async -> JSONValue {
@@ -53,7 +55,7 @@ struct GatedEndpoint: MCPEndpoint {
     private func target(of name: String) async -> (server: String, tool: String)? {
         switch scope {
         case .server(let server): (server, name)
-        case .all: await router.resolveTool(name)
+        case .all: await router.resolveTool(name, allowed: allowed)
         }
     }
 

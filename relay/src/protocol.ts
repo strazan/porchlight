@@ -10,6 +10,8 @@ export type HeaderList = [name: string, value: string][];
 
 /** An app asking to connect, as shown on the consent page and on the host. */
 export interface PairingInfo {
+	/** The OAuth client ID, so the host can remember per-app settings. */
+	client_id: string;
 	client_name: string;
 	/** Verified domain, for clients identified by a Client ID Metadata Document. */
 	client_domain?: string;

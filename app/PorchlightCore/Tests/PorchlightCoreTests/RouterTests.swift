@@ -405,12 +405,13 @@ func sseMessages(_ body: String) -> [JSONValue] {
     }
 
     @Test func decodesPairingAndClientFrames() throws {
-        let pairing = RelayFrame.decode(#"{"type":"pair_request","id":"p1","code":"048213","client_name":"Claude","client_domain":"claude.ai","redirect_host":"claude.ai","loopback":false}"#)
+        let pairing = RelayFrame.decode(#"{"type":"pair_request","id":"p1","code":"048213","client_id":"https://claude.ai/oauth/client","client_name":"Claude","client_domain":"claude.ai","redirect_host":"claude.ai","loopback":false}"#)
         guard case .event(.pairingRequested(let request)) = pairing else {
             Issue.record("expected pairing request, got \(pairing)")
             return
         }
         #expect(request.id == "p1")
+        #expect(request.clientID == "https://claude.ai/oauth/client")
         #expect(request.formattedCode == "048 213")
         #expect(request.clientDomain == "claude.ai")
         #expect(!request.loopback)
