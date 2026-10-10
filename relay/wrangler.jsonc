@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "porchlight-relay",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "Hub" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
+  "observability": { "enabled": true }
+  // Secrets (not in this file):
+  //   AGENT_SECRET — shared with the Porchlight host. `wrangler secret put AGENT_SECRET`
+  //   CLIENT_KEY   — optional; when set, MCP clients must send ?key=<CLIENT_KEY> or a bearer token
+  //   For local dev put it in .dev.vars
+}
