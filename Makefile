@@ -1,4 +1,4 @@
-.PHONY: test test-relay test-app build-cli app dev relay-bundle
+.PHONY: test test-relay test-app build-cli app release dev relay-bundle
 
 DERIVED_DATA := app/build
 
@@ -20,9 +20,16 @@ build-cli:
 
 # Builds the menubar app with Xcode and opens it.
 app:
-	xcodebuild -project app/Porchlight.xcodeproj -scheme Porchlight -configuration Debug \
+	xcodebuild -project app/Porchlight.xcodeproj -scheme Porchlight -configuration Debug -destination "generic/platform=macOS" \
 		-derivedDataPath $(DERIVED_DATA) -quiet build
 	open $(DERIVED_DATA)/Build/Products/Debug/Porchlight.app
+
+# An optimized build, signed with your team if app/Config/Signing.local.xcconfig exists.
+release:
+	xcodebuild -project app/Porchlight.xcodeproj -scheme Porchlight -configuration Release -destination "generic/platform=macOS" \
+		-derivedDataPath $(DERIVED_DATA) -quiet build
+	@codesign -dv $(DERIVED_DATA)/Build/Products/Release/Porchlight.app 2>&1 | grep -E "Authority=Developer|Signature=adhoc" || true
+	@echo "→ $(DERIVED_DATA)/Build/Products/Release/Porchlight.app"
 
 dev:
 	cd relay && npx wrangler dev

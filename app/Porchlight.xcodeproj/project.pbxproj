@@ -11,6 +11,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		7A0C00000000000000000202 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		7A0C00000000000000000201 /* Porchlight.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Porchlight.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -38,6 +39,7 @@
 			isa = PBXGroup;
 			children = (
 				7A0C00000000000000000301 /* Porchlight */,
+				7A0C00000000000000000503 /* Config */,
 				7A0C00000000000000000502 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -48,6 +50,14 @@
 				7A0C00000000000000000201 /* Porchlight.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		7A0C00000000000000000503 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				7A0C00000000000000000202 /* Base.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -179,9 +189,8 @@
 		};
 		7A0C00000000000000000821 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7A0C00000000000000000202 /* Base.xcconfig */;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -203,9 +212,8 @@
 		};
 		7A0C00000000000000000822 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7A0C00000000000000000202 /* Base.xcconfig */;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;

@@ -129,4 +129,12 @@ and keepalive pings are answered without waking it.
 make test          # relay (vitest in workerd) + PorchlightCore (Swift Testing)
 make app           # build and open the menubar app
 make relay-bundle  # after changing relay/: rebuild the relay the app deploys
+make release       # optimized build of the app
 ```
+
+Builds are signed to run locally. To sign with your own Apple Developer team, see
+`app/Config/Base.xcconfig`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

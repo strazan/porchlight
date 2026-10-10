@@ -1,0 +1,16 @@
+// Settings shared by everyone who builds Porchlight.
+//
+// By default the app is signed to run locally only. To sign with your own Apple
+// Developer team (a stable signature: no repeated Keychain prompts, and ready to
+// notarize), create Signing.local.xcconfig next to this file, e.g.:
+//
+//   DEVELOPMENT_TEAM = ABCDE12345
+//   CODE_SIGN_STYLE = Manual
+//   CODE_SIGN_IDENTITY = Developer ID Application
+//
+// It's gitignored, so your team stays out of the repository.
+
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = -
+
+#include? "Signing.local.xcconfig"

@@ -1,3 +1,4 @@
 build/
 xcuserdata/
 *.xcodeproj/project.xcworkspace/xcuserdata/
+Config/Signing.local.xcconfig
