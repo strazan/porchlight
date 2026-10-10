@@ -63,7 +63,7 @@ struct ImportView: View {
                     }
                 }
                 if let config = candidate.config {
-                    Text(alreadyAdded ? "Already added" : config.commandLineString)
+                    Text(alreadyAdded ? "Already added" : config.summary)
                         .font(alreadyAdded ? .caption : .caption.monospaced())
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -83,7 +83,7 @@ struct ImportView: View {
         var seen: [ServerConfig] = []
         for candidate in candidates {
             guard let config = candidate.config, !model.hasServer(like: config),
-                  !seen.contains(where: { $0.commandLine == config.commandLine && $0.env == config.env })
+                  !seen.contains(where: { $0.sameServer(as: config) })
             else { continue }
             seen.append(config)
             selected.insert(candidate.id)

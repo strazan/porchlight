@@ -1,26 +1,18 @@
 import Foundation
 
-/// One local stdio MCP server, shared by every client that reaches it.
+/// A local MCP server that runs as a child process, speaking JSON-RPC over stdio.
 ///
-/// - Porchlight performs the `initialize` handshake itself when it starts the child, and
-///   answers clients' `initialize` from that result. A restarted child is re-initialized
-///   transparently.
+/// - Porchlight performs the `initialize` handshake itself when it starts the child. A
+///   restarted child is re-initialized transparently.
 /// - Requests go out under internal ids (`pl-N`), so clients can't collide; the caller
 ///   puts the client's id back on the response.
 /// - The child starts lazily, on first use.
-public actor StdioUpstream {
-    public enum Status: Sendable, Equatable {
-        case idle
-        case starting
-        case running
-        case failed(String)
-    }
-
+public actor StdioUpstream: Upstream {
     public nonisolated let name: String
     private let command: [String]
     private let environment: [String: String]?
     private let log: LogSink
-    private let onStatus: @Sendable (Status) -> Void
+    private let onStatus: @Sendable (UpstreamStatus) -> Void
 
     static let initializeTimeout: Duration = .seconds(60)
     static let protocolVersion = "2025-06-18"
@@ -33,7 +25,7 @@ public actor StdioUpstream {
     private var progressRoutes: [JSONValue: ProgressSink] = [:]
     private var initializeResult: JSONValue?
 
-    public private(set) var status: Status = .idle {
+    public private(set) var status: UpstreamStatus = .idle {
         didSet { if status != oldValue { onStatus(status) } }
     }
 
@@ -42,7 +34,7 @@ public actor StdioUpstream {
         command: [String],
         environment: [String: String]? = nil,
         log: @escaping LogSink = stderrLog,
-        onStatus: @escaping @Sendable (Status) -> Void = { _ in }
+        onStatus: @escaping @Sendable (UpstreamStatus) -> Void = { _ in }
     ) {
         self.name = name
         self.command = command
@@ -51,7 +43,6 @@ public actor StdioUpstream {
         self.onStatus = onStatus
     }
 
-    /// The child's `initialize` response (with a null id), starting it if needed.
     public func initialize() async -> JSONValue {
         do {
             try await ensureRunning()
@@ -61,13 +52,7 @@ public actor StdioUpstream {
         return .object(["jsonrpc": .string("2.0"), "id": .null, "result": initializeResult ?? .object([:])])
     }
 
-    /// The capabilities the child declared, or nil if it couldn't be started.
-    public func capabilities() async -> JSONValue? {
-        await initialize()["result"]?["capabilities"]
-    }
-
-    /// Sends a request and returns the child's response, with a null id.
-    public func request(_ message: JSONValue, onProgress: ProgressSink? = nil) async -> JSONValue {
+    public func request(_ message: JSONValue, onProgress: ProgressSink?) async -> JSONValue {
         do {
             try await ensureRunning()
         } catch {

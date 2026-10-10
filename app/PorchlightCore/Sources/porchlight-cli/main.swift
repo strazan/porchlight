@@ -4,6 +4,7 @@ import PorchlightCore
 let usage = """
     Usage: porchlight-cli --relay <url> [--name <name>] -- <command> [args...]
            porchlight-cli --relay <url> [--config <servers.json>]
+           porchlight-cli --check [--config <servers.json>]
 
     Connects to a Porchlight relay and serves local stdio MCP servers through it: all of
     them combined at <relay>/mcp, and each one at <relay>/mcp/<name>.
@@ -11,6 +12,7 @@ let usage = """
       --relay <url>      Relay URL, e.g. https://porchlight-relay.you.workers.dev
       --name <name>      Name for a server given after -- (default: "default")
       --config <file>    Server list to serve (default: the Porchlight app's list)
+      --check            Connect to each enabled server, report what answers, and exit
 
     The relay's shared secret is read from PORCHLIGHT_SECRET.
 
@@ -26,6 +28,7 @@ func fail(_ message: String) -> Never {
 
 var relayArg: String?
 var configArg: String?
+var checkOnly = false
 var name = "default"
 var command: [String] = []
 var args = CommandLine.arguments.dropFirst()
@@ -40,11 +43,34 @@ while let arg = args.popFirst() {
     case "--config":
         guard let value = args.popFirst() else { fail("--config needs a value") }
         configArg = value
+    case "--check": checkOnly = true
     case "--": command = Array(args); args.removeAll()
     case "-h", "--help": print(usage); exit(0)
     default: fail("unknown argument \(arg)")
     }
 }
+@MainActor func loadServers() -> [ServerConfig] {
+    if !command.isEmpty { return [ServerConfig(name: name, command: command[0], args: Array(command.dropFirst()))] }
+    let store = configArg.map { ServerStore(url: URL(fileURLWithPath: $0)) } ?? .standard
+    guard let loaded = store.load(), !loaded.isEmpty else {
+        fail("no servers: pass a command after --, or a --config file (looked in \(store.url.path))")
+    }
+    return loaded.map { $0.repairingHeaders() }
+}
+
+if checkOnly {
+    var failed = false
+    for server in loadServers() where server.enabled {
+        switch await Router.probe(server, environment: ProcessInfo.processInfo.environment) {
+        case .success(let found): print("✓ \(server.name): \(found.serverName), \(found.toolCount) tools")
+        case .failure(let error):
+            failed = true
+            print("✗ \(server.name): \(error.message)")
+        }
+    }
+    exit(failed ? 1 : 0)
+}
+
 guard let relayArg else { fail("--relay is required") }
 guard ServerConfig.isValidName(name) else { fail("--name must be lowercase letters, digits and hyphens") }
 guard let secret = ProcessInfo.processInfo.environment["PORCHLIGHT_SECRET"], !secret.isEmpty else {
@@ -65,16 +91,7 @@ func agentURL(from string: String) -> URL? {
     return components.url
 }
 
-let servers: [ServerConfig]
-if !command.isEmpty {
-    servers = [ServerConfig(name: name, command: command[0], args: Array(command.dropFirst()))]
-} else {
-    let store = configArg.map { ServerStore(url: URL(fileURLWithPath: $0)) } ?? .standard
-    guard let loaded = store.load(), !loaded.isEmpty else {
-        fail("no servers: pass a command after --, or a --config file (looked in \(store.url.path))")
-    }
-    servers = loaded
-}
+let servers = loadServers()
 
 let router = Router(environment: ProcessInfo.processInfo.environment)
 await router.apply(servers)

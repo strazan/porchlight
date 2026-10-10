@@ -91,7 +91,7 @@ struct MenuContent: View {
 
 private struct ServerMenuRow: View {
     let server: ServerConfig
-    let status: StdioUpstream.Status
+    let status: UpstreamStatus
     let url: String
 
     var body: some View {
@@ -149,14 +149,14 @@ struct CopyButton: View {
 }
 
 struct StatusDot: View {
-    let status: StdioUpstream.Status
+    let status: UpstreamStatus
 
     var body: some View {
         Circle().fill(status.color).frame(width: 7, height: 7)
     }
 }
 
-extension StdioUpstream.Status {
+extension UpstreamStatus {
     var color: Color {
         switch self {
         case .idle: .gray

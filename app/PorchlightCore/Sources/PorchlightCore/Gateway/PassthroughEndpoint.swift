@@ -2,9 +2,9 @@ import Foundation
 
 /// Serves one upstream as-is, at `/mcp/<name>`.
 public struct PassthroughEndpoint: MCPEndpoint {
-    let upstream: StdioUpstream
+    let upstream: any Upstream
 
-    public init(upstream: StdioUpstream) {
+    public init(upstream: any Upstream) {
         self.upstream = upstream
     }
 

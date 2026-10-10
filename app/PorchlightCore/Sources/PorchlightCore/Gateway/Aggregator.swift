@@ -11,7 +11,7 @@ public actor Aggregator: MCPEndpoint {
     static let maxNameLength = 64
     static let supportedVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
 
-    private var upstreams: [StdioUpstream] = []
+    private var upstreams: [any Upstream] = []
     private var toolRoutes: [String: Route] = [:]
     private var promptRoutes: [String: Route] = [:]
     private var resourceRoutes: [String: String] = [:]
@@ -23,7 +23,7 @@ public actor Aggregator: MCPEndpoint {
 
     public init() {}
 
-    public func setUpstreams(_ upstreams: [StdioUpstream]) {
+    public func setUpstreams(_ upstreams: [any Upstream]) {
         self.upstreams = upstreams
         let names = Set(upstreams.map(\.name))
         toolRoutes = toolRoutes.filter { names.contains($0.value.server) }
@@ -154,8 +154,8 @@ public actor Aggregator: MCPEndpoint {
         }
     }
 
-    private func upstreams(with capability: String) async -> [StdioUpstream] {
-        var matching: [StdioUpstream] = []
+    private func upstreams(with capability: String) async -> [any Upstream] {
+        var matching: [any Upstream] = []
         for upstream in upstreams where await upstream.capabilities()?[capability] != nil {
             matching.append(upstream)
         }

@@ -50,7 +50,7 @@ final class AppModel {
     }
 
     private(set) var servers: [ServerConfig] = []
-    private(set) var serverStatus: [String: StdioUpstream.Status] = [:]
+    private(set) var serverStatus: [String: UpstreamStatus] = [:]
     private(set) var state: State = .off
     private(set) var logs: [LogLine] = []
     /// Apps waiting for the owner to approve them, oldest first.
@@ -62,6 +62,7 @@ final class AppModel {
     @ObservationIgnored private let store = ServerStore.standard
     @ObservationIgnored private var runner: Task<Void, Never>?
     @ObservationIgnored private var router: Router?
+    @ObservationIgnored private var shellEnvironment: [String: String]?
     @ObservationIgnored private var client: RelayClient?
     @ObservationIgnored private lazy var pairingPanel = PairingPanel(model: self)
     @ObservationIgnored private let power = PowerAssertion()
@@ -77,6 +78,12 @@ final class AppModel {
         keepAwake = defaults.bool(forKey: "keepAwake")
         deployment = defaults.data(forKey: "deployment").flatMap { try? JSONDecoder().decode(Deployment.self, from: $0) }
         servers = store.load() ?? migrateSingleServer()
+        // Older editors could save a whole "Name: value" header line as the name.
+        let repaired = servers.map { $0.repairingHeaders() }
+        if repaired != servers {
+            servers = repaired
+            try? store.save(servers)
+        }
         connectivity = ConnectivityWatcher { [weak self] in self?.connectivityChanged() }
         if isConfigured { Task { await start() } }
     }
@@ -134,7 +141,7 @@ final class AppModel {
         return components.url
     }
 
-    func status(of server: ServerConfig) -> StdioUpstream.Status {
+    func status(of server: ServerConfig) -> UpstreamStatus {
         serverStatus[server.name] ?? .idle
     }
 
@@ -173,9 +180,15 @@ final class AppModel {
         serversChanged()
     }
 
+    /// Tries a config the way a client would, for the editor's Test Connection.
+    func probe(_ config: ServerConfig) async -> Result<Router.ProbeResult, Router.ProbeError> {
+        if shellEnvironment == nil, config.transport == .stdio { shellEnvironment = await ShellEnvironment.resolve() }
+        return await Router.probe(config, environment: shellEnvironment ?? ProcessInfo.processInfo.environment)
+    }
+
     /// True if a server with the same command is already in the list.
     func hasServer(like config: ServerConfig) -> Bool {
-        servers.contains { $0.commandLine == config.commandLine && $0.env == config.env }
+        servers.contains { $0.sameServer(as: config) }
     }
 
     private func serversChanged() {
@@ -205,6 +218,7 @@ final class AppModel {
         state = .starting
         log("Resolving shell environment…")
         let environment = await ShellEnvironment.resolve()
+        shellEnvironment = environment
         guard state == .starting else { return } // switched off meanwhile
 
         let router = Router(

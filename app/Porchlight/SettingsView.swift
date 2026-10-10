@@ -89,7 +89,7 @@ private struct ServerRow: View {
             StatusDot(status: server.enabled ? status : .idle)
             VStack(alignment: .leading, spacing: 2) {
                 Text(server.name).font(.body.weight(.medium))
-                Text(server.commandLineString)
+                Text(server.summary)
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

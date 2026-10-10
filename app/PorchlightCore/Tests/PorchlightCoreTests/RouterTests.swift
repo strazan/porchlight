@@ -168,7 +168,7 @@ func sseMessages(_ body: String) -> [JSONValue] {
     }
 
     @Test func restartsACrashedServerTransparently() async {
-        let statuses = Locked<[StdioUpstream.Status]>([])
+        let statuses = Locked<[UpstreamStatus]>([])
         let router = Router(environment: ProcessInfo.processInfo.environment, log: { _, _ in }, onStatus: { _, status in
             statuses.withLock { $0.append(status) }
         })
@@ -366,7 +366,7 @@ func sseMessages(_ body: String) -> [JSONValue] {
         #expect(github.env == ["TOKEN": "t"])
 
         #expect(found[1].config == nil)
-        #expect(found[1].unsupportedReason == "HTTP servers aren't supported yet")
+        #expect(found[1].unsupportedReason == "Remote server: add it to your AI app directly")
         #expect(found[2].source == .claudeCode)
         #expect(found[2].scope == "/code/app")
         #expect(found[3].source == .cursor)

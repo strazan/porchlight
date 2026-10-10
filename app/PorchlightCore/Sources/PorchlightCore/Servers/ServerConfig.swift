@@ -1,13 +1,25 @@
 import Foundation
 
-/// A local MCP server Porchlight runs. Same shape as Claude Desktop's `mcpServers` entries.
+/// A local MCP server Porchlight serves: a command it runs (stdio), or a server already
+/// listening on this machine (Streamable HTTP). Same shape as the `mcpServers` entries in
+/// Claude Desktop and Claude Code configs.
 public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
+    public enum Transport: String, Codable, Sendable, Hashable, CaseIterable {
+        case stdio
+        case http
+    }
+
     public var id: UUID
     /// URL-safe and unique: used in `/mcp/<name>` and as the tool-name prefix.
     public var name: String
+    public var transport: Transport
+    // stdio
     public var command: String
     public var args: [String]
     public var env: [String: String]
+    // http
+    public var url: String
+    public var headers: [String: String]
     public var enabled: Bool
 
     public init(
@@ -20,13 +32,65 @@ public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
     ) {
         self.id = id
         self.name = name
+        transport = .stdio
         self.command = command
         self.args = args
         self.env = env
+        url = ""
+        headers = [:]
         self.enabled = enabled
     }
 
+    public init(id: UUID = UUID(), name: String, url: String, headers: [String: String] = [:], enabled: Bool = true) {
+        self.id = id
+        self.name = name
+        transport = .http
+        command = ""
+        args = []
+        env = [:]
+        self.url = url
+        self.headers = headers
+        self.enabled = enabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, transport, command, args, env, url, headers, enabled
+    }
+
+    // Lists saved before HTTP servers existed have no transport, url or headers.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        transport = try c.decodeIfPresent(Transport.self, forKey: .transport) ?? .stdio
+        command = try c.decodeIfPresent(String.self, forKey: .command) ?? ""
+        args = try c.decodeIfPresent([String].self, forKey: .args) ?? []
+        env = try c.decodeIfPresent([String: String].self, forKey: .env) ?? [:]
+        url = try c.decodeIfPresent(String.self, forKey: .url) ?? ""
+        headers = try c.decodeIfPresent([String: String].self, forKey: .headers) ?? [:]
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+    }
+
     public var commandLine: [String] { [command] + args }
+
+    /// What the server is, in one line: its command or its URL.
+    public var summary: String {
+        transport == .http ? url : commandLineString
+    }
+
+    /// Whether the transport-specific fields are filled in sensibly.
+    public var isRunnable: Bool {
+        switch transport {
+        case .stdio: !command.isEmpty
+        case .http: URL(string: url).map { ["http", "https"].contains($0.scheme) && $0.host() != nil } ?? false
+        }
+    }
+
+    /// Whether two configs describe the same server, ignoring name and on/off.
+    public func sameServer(as other: ServerConfig) -> Bool {
+        transport == other.transport && commandLine == other.commandLine && env == other.env
+            && url == other.url && headers == other.headers
+    }
 
     /// The command as one shell-style line, for display and editing.
     public var commandLineString: String {
@@ -87,6 +151,57 @@ public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
         var n = 2
         while taken.contains("\(base)-\(n)") { n += 1 }
         return "\(base)-\(n)"
+    }
+}
+
+// MARK: - Headers
+
+extension ServerConfig {
+    /// `Authorization: Bearer <token>`, the usual way local servers take an API key.
+    public var bearerToken: String {
+        get {
+            guard let value = headers["Authorization"], value.lowercased().hasPrefix("bearer ") else { return "" }
+            return String(value.dropFirst("bearer ".count)).trimmingCharacters(in: .whitespaces)
+        }
+        set {
+            let token = Self.bearerToken(from: newValue)
+            headers["Authorization"] = token.isEmpty ? nil : "Bearer \(token)"
+        }
+    }
+
+    /// Accepts what people paste for an API key: the key itself, `Bearer <key>`, or a
+    /// whole header line such as `Authorization: Bearer <key>` or `"Authorization": "Bearer <key>",`.
+    public static func bearerToken(from pasted: String) -> String {
+        var token = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let header = parseHeader(token), header.name.lowercased() == "authorization" { token = header.value }
+        if token.lowercased().hasPrefix("bearer ") { token = String(token.dropFirst("bearer ".count)) }
+        return token.trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: "\"',")))
+    }
+
+    /// Parses a header line: `Name: value`, or the JSON form `"Name": "value"`.
+    public static func parseHeader(_ line: String) -> (name: String, value: String)? {
+        let pattern = /^\s*"?([A-Za-z0-9!#$%&'*+.^_`|~-]+)"?\s*:\s*"?(.*?)"?\s*,?\s*$/
+        guard let match = line.wholeMatch(of: pattern) else { return nil }
+        return (String(match.1), String(match.2))
+    }
+
+    /// An HTTP header name: a token of letters, digits and a few symbols, no spaces or colons.
+    public static func isValidHeaderName(_ name: String) -> Bool {
+        !name.isEmpty && name.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "!#$%&'*+.^_`|~-".contains($0)) }
+    }
+
+    /// Fixes headers where a whole `Name: value` line ended up as the name.
+    public func repairingHeaders() -> ServerConfig {
+        var repaired = self
+        repaired.headers = [:]
+        for (name, value) in headers {
+            if !Self.isValidHeaderName(name), value.isEmpty, let header = Self.parseHeader(name) {
+                repaired.headers[header.name] = header.value
+            } else {
+                repaired.headers[name] = value
+            }
+        }
+        return repaired
     }
 }
 

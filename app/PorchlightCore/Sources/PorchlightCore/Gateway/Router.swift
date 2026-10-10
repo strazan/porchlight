@@ -3,13 +3,13 @@ import Foundation
 /// Routes tunneled requests: `/mcp` to the aggregate of all servers, `/mcp/<name>`
 /// to one server. Owns the running servers and applies configuration changes live.
 public actor Router: HTTPHandler {
-    public typealias StatusSink = @Sendable (_ server: String, _ status: StdioUpstream.Status) -> Void
+    public typealias StatusSink = @Sendable (_ server: String, _ status: UpstreamStatus) -> Void
 
     private let environment: [String: String]
     private let log: @Sendable (_ server: String, _ line: String) -> Void
     private let onStatus: StatusSink
     private let aggregator = Aggregator()
-    private var running: [String: (config: ServerConfig, upstream: StdioUpstream)] = [:]
+    private var running: [String: (config: ServerConfig, upstream: any Upstream)] = [:]
     private var order: [String] = []
 
     /// `environment` is the base for every server (e.g. the login shell's); each server's
@@ -35,19 +35,69 @@ public actor Router: HTTPHandler {
             running[name] = nil
         }
         for config in wanted where running[config.name] == nil {
-            let name = config.name
-            let log = self.log
-            let upstream = StdioUpstream(
-                name: name,
-                command: config.commandLine,
-                environment: environment.merging(config.env) { _, own in own },
-                log: { log(name, $0) },
-                onStatus: { [onStatus] in onStatus(name, $0) }
-            )
-            running[name] = (config, upstream)
+            running[config.name] = (config, makeUpstream(config))
         }
         order = wanted.map(\.name)
         await aggregator.setUpstreams(order.compactMap { running[$0]?.upstream })
+    }
+
+    public struct ProbeResult: Sendable, Equatable {
+        /// The name the server reports for itself.
+        public let serverName: String
+        public let toolCount: Int
+    }
+
+    /// Connects to a server the way a client would (initialize, list tools) and reports
+    /// what it found, or the error. For checking a config before saving it.
+    public static func probe(_ config: ServerConfig, environment: [String: String]) async -> Result<ProbeResult, ProbeError> {
+        let upstream = makeUpstream(config, environment: environment, log: { _ in }, onStatus: { _ in })
+        defer { Task { await upstream.stop() } }
+        let initialized = await upstream.initialize()
+        guard let result = initialized["result"] else {
+            return .failure(ProbeError(message: initialized["error"]?["message"]?.stringValue ?? "No answer"))
+        }
+        let tools = await upstream.request(.object(["jsonrpc": .string("2.0"), "method": .string("tools/list")]))
+        let count: Int = if case .array(let items)? = tools["result"]?["tools"] { items.count } else { 0 }
+        return .success(ProbeResult(serverName: result["serverInfo"]?["name"]?.stringValue ?? config.name, toolCount: count))
+    }
+
+    public struct ProbeError: Error, Sendable, Equatable {
+        public let message: String
+    }
+
+    private func makeUpstream(_ config: ServerConfig) -> any Upstream {
+        let name = config.name
+        let log = self.log
+        let onStatus = self.onStatus
+        return Self.makeUpstream(config, environment: environment, log: { log(name, $0) }, onStatus: { onStatus(name, $0) })
+    }
+
+    private static func makeUpstream(
+        _ config: ServerConfig,
+        environment: [String: String],
+        log: @escaping LogSink,
+        onStatus: @escaping @Sendable (UpstreamStatus) -> Void
+    ) -> any Upstream {
+        let name = config.name
+        switch config.transport {
+        case .stdio:
+            return StdioUpstream(
+                name: name,
+                command: config.commandLine,
+                environment: environment.merging(config.env) { _, own in own },
+                log: log,
+                onStatus: onStatus
+            )
+        case .http:
+            // A config that isn't runnable fails on first use, with its status saying why.
+            return HTTPUpstream(
+                name: name,
+                url: URL(string: config.url) ?? URL(string: "http://invalid.invalid")!,
+                headers: config.headers,
+                log: log,
+                onStatus: onStatus
+            )
+        }
     }
 
     /// Starts every server now instead of on first use, so a broken command shows up
