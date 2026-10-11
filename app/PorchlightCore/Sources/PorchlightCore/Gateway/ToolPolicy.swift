@@ -50,6 +50,8 @@ public enum ToolApproval: Sendable, Equatable {
 /// A tool call waiting for the owner's approval.
 public struct ToolApprovalRequest: Sendable, Identifiable, Equatable {
     public let id = UUID()
+    /// Empty for requests that didn't come through the relay's OAuth.
+    public let clientID: String
     public let clientName: String
     public let server: String
     public let tool: String
@@ -57,7 +59,8 @@ public struct ToolApprovalRequest: Sendable, Identifiable, Equatable {
     public let title: String?
     public let arguments: JSONValue
 
-    public init(clientName: String, server: String, tool: String, title: String?, arguments: JSONValue) {
+    public init(clientID: String = "", clientName: String, server: String, tool: String, title: String?, arguments: JSONValue) {
+        self.clientID = clientID
         self.clientName = clientName
         self.server = server
         self.tool = tool

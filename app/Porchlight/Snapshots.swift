@@ -20,12 +20,15 @@ enum Snapshots {
         // Controls draw in their active colors only in the active app.
         NSApp.activate()
         let only = ProcessInfo.processInfo.environment["PORCHLIGHT_SNAPSHOTS_ONLY"]
-        for shot in catalog() where only.map({ shot.name.contains($0) }) ?? true {
-            for dark in [false, true] {
-                render(shot, dark: dark, into: directory)
+        Task {
+            if ProcessInfo.processInfo.environment["PORCHLIGHT_SNAPSHOTS_ONLINE"] != nil { await prefetchIcons() }
+            for shot in catalog() where only.map({ shot.name.contains($0) }) ?? true {
+                for dark in [false, true] {
+                    render(shot, dark: dark, into: directory)
+                }
             }
+            exit(0)
         }
-        exit(0)
     }
 
     struct Shot {
@@ -68,6 +71,23 @@ enum Snapshots {
             shot("deploy-progress", .firstRun, nil, DeployView(stage: .deploying(.upload))),
             shot("deploy-done", .firstRun, nil, DeployView(stage: .done(URL(string: "https://porchlight-relay.sigge.workers.dev")!))),
         ]
+    }
+
+    /// Loads the sample apps' and servers' real icons before rendering.
+    private static func prefetchIcons() async {
+        for scenario in [AppModel.SampleScenario.everything, .waitingForToolApproval, .waitingForPairing] {
+            let model = sample(scenario)
+            for client in model.clients {
+                await model.icons.load(key: IconStore.key(app: client.clientID), defaultWebsite: client.clientDomain)
+            }
+            for request in model.pendingPairings {
+                if let domain = request.clientDomain { model.icons.learnWebsite(domain, for: IconStore.key(app: request.clientID)) }
+                await model.icons.load(key: IconStore.key(app: request.clientID), defaultWebsite: request.clientDomain)
+            }
+            for server in model.servers {
+                await model.icons.load(key: IconStore.key(server: server), defaultWebsite: ServerIconHint.domain(for: server))
+            }
+        }
     }
 
     private static var models: [String: AppModel] = [:]

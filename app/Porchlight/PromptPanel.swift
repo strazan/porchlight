@@ -84,6 +84,7 @@ struct PromptView: View {
 
 /// The layout both prompts share: who's asking and what, details, then the answer.
 private struct PromptLayout<Details: View, Buttons: View>: View {
+    let clientID: String
     let appName: String
     let title: String
     let subtitle: String
@@ -94,7 +95,7 @@ private struct PromptLayout<Details: View, Buttons: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 12) {
-                AppAvatar(name: appName, size: 40)
+                AppIcon(clientID: clientID, name: appName, size: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.title3.weight(.semibold))
@@ -128,6 +129,7 @@ private struct PairingView: View {
 
     var body: some View {
         PromptLayout(
+            clientID: request.clientID,
             appName: request.clientName,
             title: "Connect \(request.clientName)?",
             subtitle: origin
@@ -182,6 +184,7 @@ private struct ApprovalView: View {
 
     var body: some View {
         PromptLayout(
+            clientID: request.clientID,
             appName: request.clientName,
             title: "\(request.clientName) wants to use \(request.title ?? request.tool)",
             subtitle: "\(request.tool) on \(request.server)"

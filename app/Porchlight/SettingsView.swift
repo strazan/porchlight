@@ -71,6 +71,7 @@ private struct ServersTab: View {
     @Environment(AppModel.self) private var model
     @State private var selection: Set<ServerConfig.ID> = []
     @State private var editing: ServerConfig?
+    @State private var changingIcon: ServerConfig?
     @State private var importing = false
 
     var body: some View {
@@ -99,6 +100,7 @@ private struct ServersTab: View {
                     .contextMenu(forSelectionType: ServerConfig.ID.self) { ids in
                         if ids.count == 1, let server = server(ids.first) {
                             Button("Edit…") { editing = server }
+                            Button("Change Icon…") { changingIcon = server }
                             Divider()
                         }
                         Button("Remove", role: .destructive) { model.remove(ids) }
@@ -124,6 +126,7 @@ private struct ServersTab: View {
             ServerEditor(server: server, isNew: !model.servers.contains { $0.id == server.id })
         }
         .sheet(isPresented: $importing) { ImportView() }
+        .sheet(item: $changingIcon) { server in ServerIconPicker(server: server) }
     }
 
     private func server(_ id: ServerConfig.ID?) -> ServerConfig? {
@@ -142,8 +145,8 @@ private struct ServerRow: View {
 
     var body: some View {
         let status = server.enabled ? model.status(of: server) : .idle
-        HStack(spacing: 10) {
-            StatusDot(status: status)
+        HStack(spacing: 12) {
+            ServerIcon(server: server, size: 30, status: status)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(server.name).font(.body.weight(.medium))
@@ -252,10 +255,12 @@ private struct ClientRow: View {
     let access: Set<String>?
     let changeAccess: () -> Void
     let revoke: () -> Void
+    @State private var changingIcon = false
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         HStack(spacing: 12) {
-            AppAvatar(name: client.clientName, size: 30)
+            AppIcon(clientID: client.clientID, name: client.clientName, size: 32)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text(client.clientName).font(.body.weight(.medium))
@@ -278,6 +283,7 @@ private struct ClientRow: View {
             Spacer()
             Menu {
                 Button("Change Access…", action: changeAccess)
+                Button("Change Icon…") { changingIcon = true }
                 Divider()
                 Button("Revoke…", role: .destructive, action: revoke)
             } label: {
@@ -291,7 +297,18 @@ private struct ClientRow: View {
         .padding(.vertical, 4)
         .contextMenu {
             Button("Change Access…", action: changeAccess)
+            Button("Change Icon…") { changingIcon = true }
             Button("Revoke…", role: .destructive, action: revoke)
+        }
+        .sheet(isPresented: $changingIcon) {
+            IconPicker(
+                key: IconStore.key(app: app.id),
+                title: "Icon for \(client.clientName)",
+                defaultWebsite: model.defaultIconWebsite(forApp: app.id),
+                plainLabel: "Initial"
+            ) {
+                AppIcon(clientID: app.id, name: client.clientName, size: 48)
+            }
         }
     }
 
@@ -319,7 +336,7 @@ struct AccessEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
-                AppAvatar(name: client.clientName, size: 32)
+                AppIcon(clientID: client.clientID, name: client.clientName, size: 32)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("What can \(client.clientName) use?").font(.title3.weight(.semibold))
                     Text("It won't see servers you leave out.").font(.callout).foregroundStyle(.secondary)
@@ -512,6 +529,10 @@ private struct GeneralTab: View {
                 Toggle(isOn: $model.keepAwake) {
                     Text("Keep this Mac awake while Porchlight is on")
                     Text("Cloud apps can only reach your servers while your Mac is awake. Closing the lid still puts it to sleep.")
+                }
+                Toggle(isOn: Binding(get: { model.icons.fetchFromWebsites }, set: { model.icons.fetchFromWebsites = $0 })) {
+                    Text("Show icons from websites")
+                    Text("Downloads icons for apps and servers from their websites, like claude.ai or obsidian.md.")
                 }
             }
 

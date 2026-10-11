@@ -91,6 +91,8 @@ final class AppModel {
     @ObservationIgnored private let store: ServerStore
     /// Sample data for snapshots and previews: no Keychain, relay or network.
     @ObservationIgnored let isPreview: Bool
+    /// Icons for apps and servers.
+    @ObservationIgnored let icons: IconStore
     @ObservationIgnored var previewProbe: Result<Router.ProbeResult, Router.ProbeError>?
     @ObservationIgnored var previewImportCandidates: [ImportCandidate] = []
     @ObservationIgnored private var runner: Task<Void, Never>?
@@ -113,6 +115,7 @@ final class AppModel {
         self.defaults = defaults
         self.store = store
         isPreview = preview
+        icons = IconStore(defaults: defaults, preview: preview)
         relayURL = defaults.string(forKey: "relayURL") ?? "http://localhost:8787"
         secret = preview ? "" : Keychain.read("agentSecret") ?? ""
         keepAwake = defaults.bool(forKey: "keepAwake")
@@ -447,11 +450,22 @@ final class AppModel {
     /// `servers`: when allowing, the servers the app may use, or nil for all of them.
     func decide(_ request: PairingRequest, allow: Bool, servers: Set<String>? = nil) {
         pendingPairings.removeAll { $0.id == request.id }
-        if allow, !request.clientID.isEmpty { setAccess(clientID: request.clientID, servers: servers) }
+        if allow, !request.clientID.isEmpty {
+            setAccess(clientID: request.clientID, servers: servers)
+            // Where its access goes is a good place to find its icon (an app on this Mac isn't).
+            if let website = request.clientDomain ?? (request.loopback ? nil : request.redirectHost) {
+                icons.learnWebsite(website, for: IconStore.key(app: request.clientID))
+            }
+        }
         promptPanel.update()
         log("\(allow ? "Approved" : "Declined") \(request.clientName)")
         guard let client else { return }
         Task { await client.decidePairing(request.id, allow: allow) }
+    }
+
+    /// Where an app's icon comes from unless overridden: its verified domain.
+    func defaultIconWebsite(forApp clientID: String) -> String? {
+        clients.first { $0.clientID == clientID }?.clientDomain
     }
 
     /// Revokes every connection the app has.
@@ -488,6 +502,11 @@ final class AppModel {
         switch event {
         case .pairingRequested(let request):
             guard !pendingPairings.contains(where: { $0.id == request.id }) else { return }
+            // A verified domain is safe to fetch an icon from before approval; an unverified
+            // app's redirect host waits until it's approved.
+            if let domain = request.clientDomain, !request.clientID.isEmpty {
+                icons.learnWebsite(domain, for: IconStore.key(app: request.clientID))
+            }
             pendingPairings.append(request)
             log("\(request.clientName) wants to connect (code \(request.formattedCode))")
             promptPanel.update(bringToFront: true)
@@ -595,6 +614,7 @@ final class AppModel {
         switch scenario {
         case .waitingForToolApproval:
             pendingApprovals = [ToolApprovalRequest(
+                clientID: "https://claude.ai/oauth/mcp-oauth-client-metadata",
                 clientName: "Claude", server: "filesystem", tool: "write_file", title: "Write File",
                 arguments: .object(["path": .string("/Users/you/Documents/notes/todo.md"), "content": .string("- [ ] Ship Porchlight\n- [ ] Write the README")])
             )]

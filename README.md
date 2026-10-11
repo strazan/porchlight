@@ -131,6 +131,7 @@ make app           # build and open the menubar app
 make relay-bundle  # after changing relay/: rebuild the relay the app deploys
 make release       # optimized build of the app
 make snapshots     # render every screen (light and dark) to app/build/snapshots
+                   # (PORCHLIGHT_SNAPSHOTS_ONLINE=1 make snapshots: with real app and server icons)
 ```
 
 Builds are signed to run locally. To sign with your own Apple Developer team, see

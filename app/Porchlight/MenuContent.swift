@@ -227,8 +227,8 @@ private struct ServerMenuRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 8) {
-                StatusDot(status: status)
+            HStack(spacing: 9) {
+                ServerIcon(server: server, size: 18, status: status)
                 Text(server.name).font(.callout.weight(.medium))
                 Spacer(minLength: 4)
                 if hovering {
@@ -247,7 +247,7 @@ private struct ServerMenuRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .padding(.leading, 16)
+                    .padding(.leading, 27)
                     .help(problem)
             }
         }

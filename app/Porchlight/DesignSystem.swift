@@ -55,19 +55,22 @@ extension UpstreamStatus {
 
 struct StatusDot: View {
     let color: Color
+    var diameter: CGFloat = 8
 
-    init(_ color: Color) {
+    init(_ color: Color, diameter: CGFloat = 8) {
         self.color = color
+        self.diameter = diameter
     }
 
-    init(status: UpstreamStatus) {
+    init(status: UpstreamStatus, diameter: CGFloat = 8) {
         color = status.color
+        self.diameter = diameter
     }
 
     var body: some View {
         Circle()
             .fill(color)
-            .frame(width: 8, height: 8)
+            .frame(width: diameter, height: diameter)
             .overlay(Circle().strokeBorder(.black.opacity(0.08), lineWidth: 0.5))
     }
 }

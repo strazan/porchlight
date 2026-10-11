@@ -215,7 +215,9 @@ public actor Router: HTTPHandler {
         case .deny:
             return .denied("The user has blocked \(tool) on \(server) in Porchlight.")
         case .ask:
-            let request = ToolApprovalRequest(clientName: client.name, server: server, tool: tool, title: info?.title, arguments: arguments)
+            let request = ToolApprovalRequest(
+                clientID: client.id, clientName: client.name, server: server, tool: tool, title: info?.title, arguments: arguments
+            )
             switch await approve(request) {
             case .allowOnce, .allowAlways: return .allowed
             case .deny: return .denied("The user declined this call to \(tool) on their Mac.")

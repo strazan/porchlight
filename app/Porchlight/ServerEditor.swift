@@ -19,6 +19,7 @@ struct ServerEditor: View {
     @State private var test: TestState = .idle
     @State private var editingTools = false
     @State private var confirmingRemove = false
+    @State private var changingIcon = false
 
     struct Pair: Identifiable {
         let id = UUID()
@@ -52,13 +53,29 @@ struct ServerEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 14) {
-                SheetHeader(
-                    title: isNew ? "Add Server" : "Edit \(draft.name)",
-                    subtitle: draft.transport == .stdio
-                        ? "A command Porchlight runs on this Mac."
-                        : "A server that's already running on this Mac, like Obsidian's.",
-                    systemImage: draft.transport == .stdio ? "terminal" : "link"
-                )
+                HStack(alignment: .center, spacing: 12) {
+                    Button { changingIcon = true } label: {
+                        ServerIcon(server: preview, size: 40)
+                            .overlay(alignment: .bottomTrailing) {
+                                Image(systemName: "pencil.circle.fill")
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, Color.accentColor)
+                                    .font(.system(size: 14))
+                                    .offset(x: 4, y: 4)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .help("Change icon")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(isNew ? "Add Server" : "Edit \(draft.name)").font(.title3.weight(.semibold))
+                        Text(draft.transport == .stdio
+                            ? "A command Porchlight runs on this Mac."
+                            : "A server that's already running on this Mac, like Obsidian's.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
                 Picker("Type", selection: $draft.transport) {
                     Text("Command").tag(ServerConfig.Transport.stdio)
                     Text("URL").tag(ServerConfig.Transport.http)
@@ -149,6 +166,7 @@ struct ServerEditor: View {
         .sheet(isPresented: $editingTools) {
             ToolPermissionsView(config: preview, policy: $draft.toolPolicy)
         }
+        .sheet(isPresented: $changingIcon) { ServerIconPicker(server: preview) }
         .confirmationDialog("Remove \(draft.name)?", isPresented: $confirmingRemove) {
             Button("Remove", role: .destructive) {
                 model.remove([draft.id])

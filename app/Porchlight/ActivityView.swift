@@ -57,7 +57,7 @@ struct ActivityView: View {
                 .width(72)
                 TableColumn("App") { event in
                     HStack(spacing: 6) {
-                        AppAvatar(name: event.client.name, size: 16)
+                        AppIcon(clientID: event.client.id, name: event.client.name, size: 16)
                         Text(event.client.name)
                     }
                 }
