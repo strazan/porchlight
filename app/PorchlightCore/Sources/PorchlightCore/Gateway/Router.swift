@@ -16,8 +16,22 @@ public actor Router: HTTPHandler {
     private var order: [String] = []
     /// Client ID → the servers that app may use. Apps not listed may use all of them.
     private var clientAccess: [String: Set<String>] = [:]
-    /// server → tool → (read-only, title), from the servers' tool lists.
-    private var annotations: [String: [String: (readOnly: Bool, title: String?)]] = [:]
+    /// server → tool → its hints and title, from the servers' tool lists.
+    private var annotations: [String: [String: ToolHints]] = [:]
+
+    /// What a server says about one of its tools. `destructive` follows MCP's default: a tool
+    /// that isn't read-only is destructive unless it says otherwise.
+    struct ToolHints {
+        var readOnly: Bool
+        var destructive: Bool
+        var title: String?
+
+        init(_ tool: JSONValue) {
+            readOnly = tool["annotations"]?["readOnlyHint"] == .bool(true)
+            destructive = !readOnly && tool["annotations"]?["destructiveHint"] != .bool(false)
+            title = tool["title"]?.stringValue
+        }
+    }
 
     /// `environment` is the base for every server (e.g. the login shell's); each server's
     /// own `env` is layered on top. `approve` is asked about tool calls whose permission is
@@ -77,16 +91,20 @@ public actor Router: HTTPHandler {
         public let title: String?
         public let description: String?
         public let readOnly: Bool
+        /// Says it's destructive (for a badge; see `additive` for queueing).
         public let destructive: Bool
+        /// Says it neither only reads nor destroys anything: it adds. Queues offline by default.
+        public let additive: Bool
 
         public var id: String { name }
 
-        public init(name: String, title: String?, description: String?, readOnly: Bool, destructive: Bool) {
+        public init(name: String, title: String?, description: String?, readOnly: Bool, destructive: Bool, additive: Bool = false) {
             self.name = name
             self.title = title
             self.description = description
             self.readOnly = readOnly
             self.destructive = destructive
+            self.additive = additive
         }
     }
 
@@ -109,7 +127,8 @@ public actor Router: HTTPHandler {
                     title: item["title"]?.stringValue ?? item["annotations"]?["title"]?.stringValue,
                     description: item["description"]?.stringValue,
                     readOnly: item["annotations"]?["readOnlyHint"] == .bool(true),
-                    destructive: item["annotations"]?["destructiveHint"] == .bool(true)
+                    destructive: item["annotations"]?["destructiveHint"] == .bool(true),
+                    additive: !ToolHints(item).destructive && !ToolHints(item).readOnly
                 )
             }
         }
@@ -171,13 +190,18 @@ public actor Router: HTTPHandler {
         await apply([])
     }
 
+    /// Set by RelayClient on requests saved while the Mac was offline (the relay drops any
+    /// `porchlight-*` header an app sends, so apps can't set it).
+    static let queuedAtHeader = "porchlight-queued-at"
+
     public func handle(_ request: HTTPRequest, _ responder: HTTPResponder) async {
         let client = ClientIdentity(headers: request)
         let allowed = client.id.isEmpty ? nil : clientAccess[client.id]
+        let queuedAt = request.header(Self.queuedAtHeader).flatMap { try? Date($0, strategy: .iso8601) }
         let route = request.route
         if route == "/mcp" {
             let inner = ScopedAggregator(aggregator: aggregator, allowed: allowed)
-            let endpoint = GatedEndpoint(inner: inner, scope: .all, client: client, allowed: allowed, router: self)
+            let endpoint = GatedEndpoint(inner: inner, scope: .all, client: client, allowed: allowed, queuedAt: queuedAt, router: self)
             return await StreamableHTTP.serve(request, responder, endpoint: endpoint)
         }
         let parts = route.split(separator: "/")
@@ -187,7 +211,9 @@ public actor Router: HTTPHandler {
                 return await responder.respond(403, [("content-type", "text/plain")], body: Data(message.utf8))
             }
             let inner = PassthroughEndpoint(upstream: entry.upstream)
-            let endpoint = GatedEndpoint(inner: inner, scope: .server(entry.config.name), client: client, allowed: allowed, router: self)
+            let endpoint = GatedEndpoint(
+                inner: inner, scope: .server(entry.config.name), client: client, allowed: allowed, queuedAt: queuedAt, router: self
+            )
             return await StreamableHTTP.serve(request, responder, endpoint: endpoint)
         }
         await responder.respond(404, [("content-type", "text/plain")], body: Data("No such server\n".utf8))
@@ -206,7 +232,7 @@ public actor Router: HTTPHandler {
         case denied(String)
     }
 
-    func authorize(server: String, tool: String, arguments: JSONValue, client: ClientIdentity) async -> Decision {
+    func authorize(server: String, tool: String, arguments: JSONValue, client: ClientIdentity, queuedAt: Date? = nil) async -> Decision {
         guard let config = running[server]?.config else { return .allowed } // the call fails on its own
         let info = await toolInfo(server: server, tool: tool)
         switch config.toolPolicy.permission(for: tool, readOnly: info?.readOnly ?? false) {
@@ -216,7 +242,8 @@ public actor Router: HTTPHandler {
             return .denied("The user has blocked \(tool) on \(server) in Porchlight.")
         case .ask:
             let request = ToolApprovalRequest(
-                clientID: client.id, clientName: client.name, server: server, tool: tool, title: info?.title, arguments: arguments
+                clientID: client.id, clientName: client.name, server: server, tool: tool, title: info?.title,
+                arguments: arguments, queuedAt: queuedAt
             )
             switch await approve(request) {
             case .allowOnce, .allowAlways: return .allowed
@@ -239,9 +266,9 @@ public actor Router: HTTPHandler {
                 kept.append(tool)
                 continue
             }
-            let readOnly = tool["annotations"]?["readOnlyHint"] == .bool(true)
-            annotations[target.server, default: [:]][target.tool] = (readOnly, tool["title"]?.stringValue)
-            if running[target.server]?.config.toolPolicy.permission(for: target.tool, readOnly: readOnly) != .deny {
+            let hints = ToolHints(tool)
+            annotations[target.server, default: [:]][target.tool] = hints
+            if running[target.server]?.config.toolPolicy.permission(for: target.tool, readOnly: hints.readOnly) != .deny {
                 kept.append(tool)
             }
         }
@@ -260,8 +287,8 @@ public actor Router: HTTPHandler {
         clientAccess = access
     }
 
-    /// A tool's read-only hint and title, listing the server's tools if they aren't known yet.
-    private func toolInfo(server: String, tool: String) async -> (readOnly: Bool, title: String?)? {
+    /// A tool's hints and title, listing the server's tools if they aren't known yet.
+    private func toolInfo(server: String, tool: String) async -> ToolHints? {
         if let known = annotations[server]?[tool] { return known }
         guard let upstream = running[server]?.upstream else { return nil }
         let listed = await upstream.request(.object(["jsonrpc": .string("2.0"), "method": .string("tools/list")]))
@@ -271,5 +298,58 @@ public actor Router: HTTPHandler {
 
     func record(_ event: ActivityEvent) {
         onActivity(event)
+    }
+
+    // MARK: Offline catalog
+
+    /// What an app sees while the Mac is offline, for the relay to answer with: for `/mcp` and
+    /// each server it may use, the `initialize` result, its tools (minus blocked ones), and
+    /// which of them queue (see `ToolPolicy.queuesOffline`). Servers that don't answer are left out.
+    public func offlineCatalog(for clientID: String) async -> JSONValue {
+        let allowed = clientID.isEmpty ? nil : clientAccess[clientID]
+        let initialize: JSONValue = .object([
+            "jsonrpc": .string("2.0"), "id": .int(0), "method": .string("initialize"),
+            "params": .object(["protocolVersion": .string(Aggregator.supportedVersions[0])]),
+        ])
+        let list: JSONValue = .object(["jsonrpc": .string("2.0"), "id": .int(1), "method": .string("tools/list")])
+
+        var paths: [String: JSONValue] = [:]
+        let combined = ScopedAggregator(aggregator: aggregator, allowed: allowed)
+        if let result = await combined.call(initialize, onProgress: nil)["result"] {
+            let tools = await withoutDeniedTools(await combined.call(list, onProgress: nil), scope: .all)
+            paths["/mcp"] = await catalogPath(result, tools, scope: .all)
+        }
+        for name in order where allowed?.contains(name) ?? true {
+            guard let upstream = running[name]?.upstream else { continue }
+            let endpoint = PassthroughEndpoint(upstream: upstream)
+            guard let result = await endpoint.call(initialize, onProgress: nil)["result"] else { continue }
+            let tools = await withoutDeniedTools(await endpoint.call(list, onProgress: nil), scope: .server(name))
+            paths["/mcp/\(name)"] = await catalogPath(result, tools, scope: .server(name))
+        }
+        return .object([
+            "protocol_versions": .array(Aggregator.supportedVersions.map { .string($0) }),
+            "paths": .object(paths),
+        ])
+    }
+
+    private func catalogPath(_ initialize: JSONValue, _ listed: JSONValue, scope: GatedEndpoint.Scope) async -> JSONValue {
+        guard case .array(let tools)? = listed["result"]?["tools"] else {
+            return .object(["initialize": initialize, "tools": .array([]), "queueable": .array([])])
+        }
+        var queueable: [JSONValue] = []
+        for tool in tools {
+            guard let name = tool["name"]?.stringValue else { continue }
+            let target: (server: String, tool: String)? = switch scope {
+            case .server(let server): (server, name)
+            case .all: await aggregator.knownTool(name)
+            }
+            guard let target, let policy = running[target.server]?.config.toolPolicy,
+                  let hints = annotations[target.server]?[target.tool]
+            else { continue }
+            if policy.queuesOffline(target.tool, readOnly: hints.readOnly, destructive: hints.destructive) {
+                queueable.append(.string(name))
+            }
+        }
+        return .object(["initialize": initialize, "tools": .array(tools), "queueable": .array(queueable)])
     }
 }

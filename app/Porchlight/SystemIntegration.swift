@@ -1,7 +1,9 @@
 import AppKit
 import IOKit.pwr_mgt
 import Network
+import PorchlightCore
 import ServiceManagement
+import UserNotifications
 
 /// Keeps the Mac from idle-sleeping while held. A closed lid still sleeps it (unless it's
 /// connected to power and a display).
@@ -73,5 +75,30 @@ final class ConnectivityWatcher {
     deinit {
         monitor.cancel()
         if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
+    }
+}
+
+/// Tells the owner what ran from the requests apps left while the Mac was offline.
+@MainActor
+enum QueuedNotice {
+    static func post(_ summary: [(app: String, outcome: QueuedOutcome)]) {
+        guard !summary.isEmpty else { return }
+        var apps: [String] = []
+        for entry in summary where !apps.contains(entry.app) { apps.append(entry.app) }
+        let ran = summary.filter { $0.outcome == .ran }.count
+        let content = UNMutableNotificationContent()
+        let from = apps.formatted(.list(type: .and))
+        content.title = summary.count == 1 ? "A request from \(from)" : "\(summary.count) requests from \(from)"
+        content.body = switch (ran, summary.count - ran) {
+        case (_, 0): "Made while your Mac was offline, and done now."
+        case (0, _): "Made while your Mac was offline. They didn't go through; see Activity."
+        case let (done, failed): "Made while your Mac was offline: \(done) done, \(failed) didn't go through (see Activity)."
+        }
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        Task { @MainActor in
+            let center = UNUserNotificationCenter.current()
+            guard (try? await center.requestAuthorization(options: [.alert])) == true else { return }
+            try? await center.add(request)
+        }
     }
 }

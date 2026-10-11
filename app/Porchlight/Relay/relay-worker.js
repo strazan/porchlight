@@ -711,8 +711,8 @@ async function verifySignature(args) {
     now: args.now
   });
   if (!initial.ok) return initial;
-  const result = await verifyWith(initial.value);
-  if (result.ok) return result;
+  const result2 = await verifyWith(initial.value);
+  if (result2.ok) return result2;
   const refreshed = await args.jwksProvider.fetch(source, {
     forceRefresh: true,
     now: args.now
@@ -847,16 +847,16 @@ var I18N_FIELDS = {
   policy_uri: "uri"
 };
 function extractI18nFields(raw) {
-  const result = {};
+  const result2 = {};
   for (const key of Object.keys(raw)) {
     const hashIndex = key.indexOf("#");
     if (hashIndex <= 0 || hashIndex === key.length - 1) continue;
     const kind = I18N_FIELDS[key.slice(0, hashIndex)];
     if (!kind) continue;
     const value = kind === "uri" ? optionalHttpUri(raw[key], key) : optionalString(raw[key], key);
-    if (value !== void 0) result[key] = value;
+    if (value !== void 0) result2[key] = value;
   }
-  return Object.keys(result).length > 0 ? result : void 0;
+  return Object.keys(result2).length > 0 ? result2 : void 0;
 }
 __name(extractI18nFields, "extractI18nFields");
 function validateChoiceConsistency(preferredName, preferredValue, choicesName, choices) {
@@ -1470,10 +1470,10 @@ function parseEmaScopeParam(scope, assertionScopes) {
   return ok(requested);
 }
 __name(parseEmaScopeParam, "parseEmaScopeParam");
-function validateEmaMapperResult(result) {
-  if (result === null) return err({ reason: "mapper_denied" });
-  if (typeof result !== "object") return err({ reason: "invalid_mapped_user" });
-  const r = result;
+function validateEmaMapperResult(result2) {
+  if (result2 === null) return err({ reason: "mapper_denied" });
+  if (typeof result2 !== "object") return err({ reason: "invalid_mapped_user" });
+  const r = result2;
   if (typeof r.userId !== "string" || r.userId.length === 0 || r.userId.includes(":")) return err({ reason: "invalid_mapped_user" });
   if (!Array.isArray(r.scope) || !r.scope.every((s) => typeof s === "string" && isValidOAuthScopeToken(s))) return err({ reason: "invalid_mapped_scope" });
   if (!("props" in r) || r.props === void 0) return err({ reason: "invalid_mapped_props" });
@@ -3351,7 +3351,7 @@ var OAuthProviderImpl = class {
       category: "enterprise-managed-authorization",
       reason: "client_authentication_required"
     });
-    const result = await this.runEmaPipeline({
+    const result2 = await this.runEmaPipeline({
       body,
       clientInfo,
       env,
@@ -3359,15 +3359,15 @@ var OAuthProviderImpl = class {
       request,
       enterpriseOptions
     });
-    if (!result.ok) {
-      const wire = emaErrorToWire(result.error);
+    if (!result2.ok) {
+      const wire = emaErrorToWire(result2.error);
       return this.createErrorResponse(wire.code, { description: wire.message }, {
         category: "enterprise-managed-authorization",
-        reason: result.error.reason,
-        detail: result.error
+        reason: result2.error.reason,
+        detail: result2.error
       });
     }
-    return new Response(JSON.stringify(result.value), { headers: {
+    return new Response(JSON.stringify(result2.value), { headers: {
       "Content-Type": "application/json",
       ...NO_CACHE_HEADERS
     } });
@@ -4520,11 +4520,11 @@ function isIssuedTokenFormat(token) {
 __name(isIssuedTokenFormat, "isIssuedTokenFormat");
 function generateRandomString(length) {
   const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-  let result = "";
+  let result2 = "";
   const values = new Uint8Array(length);
   crypto.getRandomValues(values);
-  for (let i = 0; i < length; i++) result += characters.charAt(values[i] % 64);
-  return result;
+  for (let i = 0; i < length; i++) result2 += characters.charAt(values[i] % 64);
+  return result2;
 }
 __name(generateRandomString, "generateRandomString");
 async function generateTokenId(token) {
@@ -5074,12 +5074,12 @@ var OAuthHelpersImpl = class {
     while (!allTokensDeleted) {
       const listOptions = { prefix: tokenPrefix };
       if (cursor) listOptions.cursor = cursor;
-      const result = await this.env.OAUTH_KV.list(listOptions);
-      if (result.keys.length > 0) await Promise.all(result.keys.map((key) => {
+      const result2 = await this.env.OAUTH_KV.list(listOptions);
+      if (result2.keys.length > 0) await Promise.all(result2.keys.map((key) => {
         return this.env.OAUTH_KV.delete(key.name);
       }));
-      if (result.list_complete) allTokensDeleted = true;
-      else cursor = result.cursor;
+      if (result2.list_complete) allTokensDeleted = true;
+      else cursor = result2.cursor;
     }
     await this.env.OAUTH_KV.delete(grantKey);
   }
@@ -5112,7 +5112,7 @@ var OAuthHelpersImpl = class {
     const purgeOrphanedTokens = options?.purgeOrphanedTokens !== false;
     const start = parsePurgeCursor(options?.cursor);
     const now = Math.floor(Date.now() / 1e3);
-    const result = {
+    const result2 = {
       grantsChecked: 0,
       grantsPurged: 0,
       tokensChecked: 0,
@@ -5124,16 +5124,16 @@ var OAuthHelpersImpl = class {
       const knownMissingClients = /* @__PURE__ */ new Set();
       let grantCursor = start.kvCursor;
       let grantsDone = false;
-      while (!grantsDone && result.grantsChecked < batchSize) {
+      while (!grantsDone && result2.grantsChecked < batchSize) {
         const listOptions = {
           prefix: "grant:",
-          limit: Math.min(1e3, batchSize - result.grantsChecked)
+          limit: Math.min(1e3, batchSize - result2.grantsChecked)
         };
         if (grantCursor) listOptions.cursor = grantCursor;
         const page2 = await this.env.OAUTH_KV.list(listOptions);
         for (const key of page2.keys) {
-          if (result.grantsChecked >= batchSize) break;
-          result.grantsChecked++;
+          if (result2.grantsChecked >= batchSize) break;
+          result2.grantsChecked++;
           const grantData = await this.env.OAUTH_KV.get(key.name, { type: "json" });
           if (!grantData) continue;
           let shouldPurge = false;
@@ -5148,14 +5148,14 @@ var OAuthHelpersImpl = class {
           }
           if (shouldPurge) {
             await this.revokeGrant(grantData.id, grantData.userId);
-            result.grantsPurged++;
+            result2.grantsPurged++;
           }
         }
         if (page2.list_complete) grantsDone = true;
         else grantCursor = page2.cursor;
       }
       if (!grantsDone) return {
-        ...result,
+        ...result2,
         cursor: `grants:${grantCursor ?? ""}`
       };
     }
@@ -5164,39 +5164,39 @@ var OAuthHelpersImpl = class {
       const knownMissingGrants = /* @__PURE__ */ new Set();
       let tokenCursor = start.phase === "tokens" ? start.kvCursor : void 0;
       let tokensDone = false;
-      while (!tokensDone && result.tokensChecked < batchSize) {
+      while (!tokensDone && result2.tokensChecked < batchSize) {
         const listOptions = {
           prefix: "token:",
-          limit: Math.min(1e3, batchSize - result.tokensChecked)
+          limit: Math.min(1e3, batchSize - result2.tokensChecked)
         };
         if (tokenCursor) listOptions.cursor = tokenCursor;
         const page2 = await this.env.OAUTH_KV.list(listOptions);
         for (const key of page2.keys) {
-          if (result.tokensChecked >= batchSize) break;
-          result.tokensChecked++;
+          if (result2.tokensChecked >= batchSize) break;
+          result2.tokensChecked++;
           const tokenData = await this.env.OAUTH_KV.get(key.name, { type: "json" });
           if (!tokenData) continue;
           const grantKey = `grant:${tokenData.userId}:${tokenData.grantId}`;
           if (knownMissingGrants.has(grantKey)) {
             await this.env.OAUTH_KV.delete(key.name);
-            result.tokensPurged++;
+            result2.tokensPurged++;
           } else if (!knownGoodGrants.has(grantKey)) if (await this.env.OAUTH_KV.get(grantKey)) knownGoodGrants.add(grantKey);
           else {
             knownMissingGrants.add(grantKey);
             await this.env.OAUTH_KV.delete(key.name);
-            result.tokensPurged++;
+            result2.tokensPurged++;
           }
         }
         if (page2.list_complete) tokensDone = true;
         else tokenCursor = page2.cursor;
       }
       if (!tokensDone) return {
-        ...result,
+        ...result2,
         cursor: `tokens:${tokenCursor ?? ""}`
       };
     }
-    result.done = true;
-    return result;
+    result2.done = true;
+    return result2;
   }
 };
 
@@ -5346,6 +5346,7 @@ async function forwardToHost(request, env, ctx) {
   }
   headers.set("porchlight-client-id", encodeURIComponent(ctx.auth?.clientId ?? ""));
   headers.set("porchlight-client-name", encodeURIComponent(ctx.props?.clientName ?? ""));
+  headers.set("porchlight-grant-id", encodeURIComponent(grantIdFromToken(ctx.auth?.token)));
   return hub(env).fetch(new Request(request, { headers }));
 }
 __name(forwardToHost, "forwardToHost");
@@ -5418,6 +5419,11 @@ async function submitAuthorize(request, env, origin) {
   return new Response(null, { status: 302, headers: approved.headers });
 }
 __name(submitAuthorize, "submitAuthorize");
+function grantIdFromToken(token) {
+  const parts = token?.split(":") ?? [];
+  return parts.length === 3 ? parts[1] : "";
+}
+__name(grantIdFromToken, "grantIdFromToken");
 function grantIdFromRedirect(redirectTo) {
   const parts = new URL(redirectTo).searchParams.get("code")?.split(":") ?? [];
   return parts.length === 3 ? parts[1] : "";
@@ -5465,11 +5471,25 @@ function parseHostFrame(raw) {
       return m;
     case "revoke_client":
       return typeof m.grant_id === "string" ? m : null;
+    case "offline_catalog":
+      return typeof m.client_id === "string" && (m.catalog === null || isCatalog(m.catalog)) ? m : null;
+    case "queued_done":
+      return typeof m.id === "string" ? m : null;
     default:
       return null;
   }
 }
 __name(parseHostFrame, "parseHostFrame");
+function isCatalog(value) {
+  if (typeof value !== "object" || value === null) return false;
+  const c = value;
+  if (!Array.isArray(c.protocol_versions) || typeof c.paths !== "object" || c.paths === null) return false;
+  return Object.values(c.paths).every((path) => {
+    const p = path;
+    return typeof p === "object" && p !== null && typeof p.initialize === "object" && p.initialize !== null && Array.isArray(p.tools) && Array.isArray(p.queueable);
+  });
+}
+__name(isCatalog, "isCatalog");
 function toBase64(bytes) {
   let bin = "";
   for (let i = 0; i < bytes.length; i += 32768) {
@@ -5488,16 +5508,139 @@ __name(fromBase64, "fromBase64");
 
 // src/hub.ts
 import { DurableObject } from "cloudflare:workers";
+
+// src/offline.ts
+async function answerOffline(method, path, body, catalog, enqueue) {
+  const entry = catalog.paths[path.replace(/\/+$/, "")];
+  if (!entry) return null;
+  if (method !== "POST") return new Response("Method not allowed", { status: 405, headers: { allow: "POST" } });
+  let parsed;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    return Response.json(rpcError(null, -32700, "Parse error"), { status: 400 });
+  }
+  const replies = [];
+  for (const message of Array.isArray(parsed) ? parsed : [parsed]) {
+    const reply = await answer(message, entry, catalog, enqueue);
+    if (reply) replies.push(reply);
+  }
+  if (replies.length === 0) return new Response(null, { status: 202 });
+  return Response.json(Array.isArray(parsed) ? replies : replies[0]);
+}
+__name(answerOffline, "answerOffline");
+async function answer(raw, entry, catalog, enqueue) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return rpcError(null, -32600, "Invalid request");
+  const message = raw;
+  if (typeof message.method !== "string") return rpcError(message.id ?? null, -32600, "Invalid request");
+  if (!("id" in message)) return null;
+  const id = message.id;
+  const params = typeof message.params === "object" && message.params !== null ? message.params : {};
+  switch (message.method) {
+    case "initialize": {
+      const requested = params.protocolVersion;
+      const version2 = typeof requested === "string" && catalog.protocol_versions.includes(requested) ? requested : entry.initialize.protocolVersion;
+      return result(id, { ...entry.initialize, protocolVersion: version2 });
+    }
+    case "ping":
+      return result(id, {});
+    case "tools/list":
+      return result(id, { tools: entry.tools });
+    case "prompts/list":
+      return result(id, { prompts: [] });
+    case "resources/list":
+      return result(id, { resources: [] });
+    case "resources/templates/list":
+      return result(id, { resourceTemplates: [] });
+    case "tools/call": {
+      const name = typeof params.name === "string" ? params.name : "This tool";
+      if (!entry.queueable.includes(name)) {
+        return toolResult(id, `${name} runs on the user's Mac, which is offline right now. It can't run until the Mac is back.`, true);
+      }
+      const queued = await enqueue(message);
+      if (!queued) {
+        return toolResult(id, "The user's Mac is offline, and Porchlight couldn't save this request for later. Try again when the Mac is back.", true);
+      }
+      return toolResult(
+        id,
+        `The user's Mac is offline, so Porchlight saved this request. It will run when the Mac is back, and Porchlight may ask the user to approve it first. (Queued as ${queued.slice(0, 8)}.)`,
+        false
+      );
+    }
+    default:
+      return rpcError(id, -32001, "Porchlight host is offline");
+  }
+}
+__name(answer, "answer");
+function result(id, value) {
+  return { jsonrpc: "2.0", id, result: value };
+}
+__name(result, "result");
+function toolResult(id, text, isError) {
+  return result(id, { content: [{ type: "text", text }], isError });
+}
+__name(toolResult, "toolResult");
+function rpcError(id, code, message) {
+  return { jsonrpc: "2.0", id, error: { code, message } };
+}
+__name(rpcError, "rpcError");
+
+// src/seal.ts
+var INFO = new TextEncoder().encode("porchlight-queue-v1");
+var CURVE = { name: "ECDH", namedCurve: "P-256" };
+async function seal(recipient, plaintext, associated) {
+  const theirs = await crypto.subtle.importKey("raw", recipient, CURVE, false, []);
+  const ours = await crypto.subtle.generateKey(CURVE, true, ["deriveBits"]);
+  const key = await aesKey(ours.privateKey, theirs, ["encrypt"]);
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce, additionalData: new TextEncoder().encode(associated) },
+    key,
+    plaintext
+  );
+  const ephemeral = new Uint8Array(await crypto.subtle.exportKey("raw", ours.publicKey));
+  return concat(ephemeral, nonce, new Uint8Array(ciphertext));
+}
+__name(seal, "seal");
+async function aesKey(privateKey, publicKey, usages) {
+  const ecdh = { name: "ECDH", public: publicKey };
+  const shared = await crypto.subtle.deriveBits(ecdh, privateKey, 256);
+  const hkdf = await crypto.subtle.importKey("raw", shared, "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(), info: INFO },
+    hkdf,
+    { name: "AES-GCM", length: 256 },
+    false,
+    usages
+  );
+}
+__name(aesKey, "aesKey");
+function concat(...parts) {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+__name(concat, "concat");
+
+// src/hub.ts
 var START_TIMEOUT_MS = 6e4;
 var PAIRING_TTL_MS = 10 * 6e4;
 var KV_LAG_MS = 5 * 6e4;
 var MAX_REQUEST_BODY = 8 * 1024 * 1024;
+var QUEUE_TTL_MS = 7 * 24 * 36e5;
+var MAX_QUEUED = 100;
+var MAX_QUEUED_BODY = 256 * 1024;
 var STRIP_REQUEST = /* @__PURE__ */ new Set([
   "authorization",
   "connection",
   "content-length",
   "host",
   "keep-alive",
+  "porchlight-grant-id",
   "proxy-authorization",
   "te",
   "trailer",
@@ -5532,6 +5675,9 @@ var Hub = class extends DurableObject {
       if (record.state === "pending" && record.expiresAt > Date.now()) {
         this.sendPairRequest(server, key.slice("pair:".length), record);
       }
+    }
+    for (const item of (await this.ctx.storage.list({ prefix: "queue:" })).values()) {
+      if (item.queued_at + QUEUE_TTL_MS > Date.now()) this.sendQueued(server, item);
     }
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -5625,7 +5771,79 @@ var Hub = class extends DurableObject {
     if (!oauth) return;
     await oauth.revokeGrant(grantId, OWNER);
     await this.ctx.storage.put(`revoked:${grantId}`, Date.now());
+    for (const [key, item] of await this.ctx.storage.list({ prefix: "queue:" })) {
+      if (item.grant_id === grantId) await this.ctx.storage.delete(key);
+    }
     await this.sendClients(ws);
+  }
+  // MARK: Offline queue
+  /** Answers from the app's catalog when there is one; otherwise a plain "offline" error. */
+  async offline(request, body) {
+    const clientID = decodeURIComponent(request.headers.get("porchlight-client-id") ?? "");
+    const catalog = clientID ? await this.ctx.storage.get(`catalog:${clientID}`) : void 0;
+    if (catalog) {
+      const path = new URL(request.url).pathname;
+      const answered = await answerOffline(
+        request.method,
+        path,
+        body,
+        catalog,
+        (message) => this.enqueue(request, path, message)
+      );
+      if (answered) return answered;
+    }
+    return offline(body);
+  }
+  async enqueue(request, path, message) {
+    const key = await this.ctx.storage.get("queuekey");
+    if (!key) return null;
+    const plaintext = new TextEncoder().encode(JSON.stringify(message));
+    if (plaintext.length > MAX_QUEUED_BODY) return null;
+    if ((await this.ctx.storage.list({ prefix: "queue:" })).size >= MAX_QUEUED) return null;
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    const header = /* @__PURE__ */ __name((name) => decodeURIComponent(request.headers.get(name) ?? ""), "header");
+    const item = {
+      id,
+      grant_id: header("porchlight-grant-id"),
+      client_id: header("porchlight-client-id"),
+      client_name: header("porchlight-client-name"),
+      path,
+      queued_at: now,
+      sealed: toBase64(await seal(fromBase64(key), plaintext, id))
+    };
+    await this.ctx.storage.put(`queue:${String(now).padStart(13, "0")}-${id}`, item);
+    await this.scheduleCleanup(now + QUEUE_TTL_MS);
+    const ws = this.host();
+    if (ws) this.sendQueued(ws, item);
+    return id;
+  }
+  sendQueued(ws, item) {
+    const { grant_id: _, ...frame } = item;
+    this.send(ws, { type: "queued", ...frame });
+  }
+  async queuedDone(id) {
+    for (const [key, item] of await this.ctx.storage.list({ prefix: "queue:" })) {
+      if (item.id === id) await this.ctx.storage.delete(key);
+    }
+  }
+  async scheduleCleanup(at) {
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > at) await this.ctx.storage.setAlarm(at);
+  }
+  /** Drops expired queued requests and pairings, then waits for the next to expire. */
+  async alarm() {
+    const now = Date.now();
+    let next;
+    for (const [key, item] of await this.ctx.storage.list({ prefix: "queue:" })) {
+      const expires = item.queued_at + QUEUE_TTL_MS;
+      if (expires <= now) await this.ctx.storage.delete(key);
+      else next = Math.min(next ?? expires, expires);
+    }
+    for (const [key, record] of await this.ctx.storage.list({ prefix: "pair:" })) {
+      if (record.expiresAt <= now) await this.ctx.storage.delete(key);
+    }
+    if (next !== void 0) await this.ctx.storage.setAlarm(next);
   }
   async oauth() {
     const origin = await this.ctx.storage.get("origin");
@@ -5643,7 +5861,7 @@ var Hub = class extends DurableObject {
   async forward(request) {
     const body = new Uint8Array(await request.arrayBuffer());
     const ws = this.host();
-    if (!ws) return offline(body);
+    if (!ws) return this.offline(request, body);
     if (body.length > MAX_REQUEST_BODY) return new Response("Request body too large", { status: 413 });
     const url = new URL(request.url);
     const headers = [];
@@ -5695,7 +5913,16 @@ var Hub = class extends DurableObject {
         return this.revokeClient(ws, frame.grant_id);
       case "hello":
         ws.serializeAttachment({ proto: frame.proto, app_version: frame.app_version });
+        if (frame.queue_key && fromBase64(frame.queue_key).length === 65) {
+          await this.ctx.storage.put("queuekey", frame.queue_key);
+        }
         return;
+      case "offline_catalog":
+        if (frame.catalog) await this.ctx.storage.put(`catalog:${frame.client_id}`, frame.catalog);
+        else await this.ctx.storage.delete(`catalog:${frame.client_id}`);
+        return;
+      case "queued_done":
+        return this.queuedDone(frame.id);
       case "res_start": {
         const p = this.pending.get(frame.id);
         if (!p || p.started) return;

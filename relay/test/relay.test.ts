@@ -1,6 +1,9 @@
-import { SELF, env, runInDurableObject } from "cloudflare:test";
+import { SELF, env, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { type HostToRelay, type RelayToHost, fromBase64, toBase64 } from "../src/protocol";
+import { MAX_QUEUED, QUEUE_TTL_MS } from "../src/hub";
+import { type Catalog, type HostToRelay, type RelayToHost, fromBase64, toBase64 } from "../src/protocol";
+import { open } from "../src/seal";
+import vector from "../../protocol/vectors/queue.json";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -12,7 +15,7 @@ type ReqFrame = Extract<RelayToHost, { type: "req" }>;
 type Send = (f: HostToRelay) => void;
 
 /** A fake Porchlight host connected to the relay. */
-async function connectHost(onRequest: (req: ReqFrame, send: Send) => void = () => {}) {
+async function connectHost(onRequest: (req: ReqFrame, send: Send) => void = () => {}, queueKey?: string) {
 	const res = await SELF.fetch(`${ORIGIN}/agent`, {
 		headers: { upgrade: "websocket", authorization: "Bearer test-secret", "porchlight-protocol": "1" },
 	});
@@ -32,7 +35,7 @@ async function connectHost(onRequest: (req: ReqFrame, send: Send) => void = () =
 			waiter.resolve(frame);
 		}
 	});
-	send({ type: "hello", proto: 1, app_version: "test" });
+	send({ type: "hello", proto: 1, app_version: "test", queue_key: queueKey });
 	/** The next frame of `type` matching `where` (or one already received and not yet taken). */
 	function next<T extends RelayToHost["type"]>(
 		type: T,
@@ -408,5 +411,168 @@ describe("tunnel", () => {
 		expect(await closed).toBe(4000);
 		expect(await (await mcp(access_token)).text()).toBe("second");
 		second.ws.close();
+	});
+});
+
+describe("offline queue", () => {
+	const hubStub = () => env.HUB.get(env.HUB.idFromName("default"));
+	const catalog = (queueable = ["notes__add"]): Catalog => ({
+		protocol_versions: ["2025-06-18", "2025-03-26"],
+		paths: {
+			"/mcp": {
+				initialize: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "porchlight" } },
+				tools: [{ name: "notes__add" }, { name: "notes__read" }],
+				queueable,
+			},
+		},
+	});
+	const call = (name: string, text = "a secret note") =>
+		JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name, arguments: { text } } });
+
+	async function keyPair() {
+		const pair = (await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"])) as CryptoKeyPair;
+		const raw = (await crypto.subtle.exportKey("raw", pair.publicKey)) as ArrayBuffer;
+		return { privateKey: pair.privateKey, publicKey: toBase64(new Uint8Array(raw)) };
+	}
+
+	const stored = () =>
+		runInDurableObject(hubStub(), async (_, state) => [...(await state.storage.list<Record<string, unknown>>({ prefix: "queue:" })).values()]);
+
+	/** A paired app with a catalog, and its host gone offline. */
+	async function offlineApp(queueable?: string[]) {
+		await runInDurableObject(hubStub(), async (_, state) => {
+			for (const key of (await state.storage.list({ prefix: "queue:" })).keys()) await state.storage.delete(key);
+		});
+		const key = await keyPair();
+		const host = await connectHost(undefined, key.publicKey);
+		const app = await pair(host, "Queue App");
+		const listed = await host.next("clients", (f) => f.items.some((item) => item.client_id === app.client_id));
+		const grantID = listed.items.find((item) => item.client_id === app.client_id)!.grant_id;
+		host.send({ type: "offline_catalog", client_id: app.client_id, catalog: catalog(queueable) });
+		await expect
+			.poll(() => runInDurableObject(hubStub(), (_, state) => state.storage.get(`catalog:${app.client_id}`)))
+			.toBeTruthy();
+		host.ws.close();
+		return { ...app, key, grantID };
+	}
+
+	it("answers from the app's catalog while the host is offline", async () => {
+		const app = await offlineApp();
+		const init = await mcp(app.access_token, "/mcp", {
+			body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26" } }),
+		});
+		expect(init.status).toBe(200);
+		expect(await init.json()).toMatchObject({ id: 1, result: { protocolVersion: "2025-03-26", serverInfo: { name: "porchlight" } } });
+
+		const list = await mcp(app.access_token);
+		expect(await list.json()).toMatchObject({ id: 1, result: { tools: [{ name: "notes__add" }, { name: "notes__read" }] } });
+
+		const notification = await mcp(app.access_token, "/mcp", {
+			body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+		});
+		expect(notification.status).toBe(202);
+		// Paths the catalog doesn't cover, and apps without one, get the plain offline error.
+		expect((await mcp(app.access_token, "/mcp/other")).status).toBe(503);
+		const host = await connectHost();
+		const other = await pair(host, "No Catalog");
+		host.ws.close();
+		expect((await mcp(other.access_token)).status).toBe(503);
+	});
+
+	it("saves calls to queueable tools, sealed, and delivers them when the host is back", async () => {
+		const app = await offlineApp();
+		const saved = await (await mcp(app.access_token, "/mcp", { body: call("notes__add") })).json();
+		expect(saved).toMatchObject({ id: 3, result: { isError: false } });
+		expect(JSON.stringify(saved)).toContain("saved this request");
+
+		const refused = await (await mcp(app.access_token, "/mcp", { body: call("notes__read") })).json();
+		expect(refused).toMatchObject({ id: 3, result: { isError: true } });
+
+		const items = await stored();
+		expect(items).toHaveLength(1);
+		expect(JSON.stringify(items)).not.toContain("a secret note");
+
+		const host = await connectHost(undefined, app.key.publicKey);
+		const queued = await host.next("queued");
+		expect(queued).toMatchObject({ client_id: app.client_id, client_name: "Queue App", path: "/mcp" });
+		const body = JSON.parse(dec.decode(await open(app.key.privateKey, fromBase64(queued.sealed), queued.id)));
+		expect(body).toMatchObject({ method: "tools/call", params: { name: "notes__add", arguments: { text: "a secret note" } } });
+
+		host.send({ type: "queued_done", id: queued.id });
+		await expect.poll(async () => (await stored()).length).toBe(0);
+		host.ws.close();
+	});
+
+	it("delivers oldest first, and again until the host says it's done", async () => {
+		const app = await offlineApp();
+		await mcp(app.access_token, "/mcp", { body: call("notes__add", "first") });
+		await mcp(app.access_token, "/mcp", { body: call("notes__add", "second") });
+
+		const first = await connectHost(undefined, app.key.publicKey);
+		const a = await first.next("queued");
+		const b = await first.next("queued");
+		expect(a.queued_at).toBeLessThanOrEqual(b.queued_at);
+		expect(dec.decode(await open(app.key.privateKey, fromBase64(a.sealed), a.id))).toContain("first");
+		first.send({ type: "queued_done", id: a.id });
+		await expect.poll(async () => (await stored()).length).toBe(1);
+		first.ws.close();
+
+		const second = await connectHost(undefined, app.key.publicKey);
+		expect((await second.next("queued")).id).toBe(b.id);
+		second.send({ type: "queued_done", id: b.id });
+		await expect.poll(async () => (await stored()).length).toBe(0);
+		second.ws.close();
+	});
+
+	it("drops what an app queued when it's revoked", async () => {
+		const app = await offlineApp();
+		await mcp(app.access_token, "/mcp", { body: call("notes__add") });
+		expect(await stored()).toHaveLength(1);
+		const host = await connectHost(undefined, app.key.publicKey);
+		await host.next("queued");
+		host.send({ type: "revoke_client", grant_id: app.grantID });
+		await expect.poll(async () => (await stored()).length).toBe(0);
+		host.ws.close();
+	});
+
+	it("refuses to save without the host's key, or past the limit", async () => {
+		const app = await offlineApp();
+		await runInDurableObject(hubStub(), async (_, state) => {
+			for (let i = 0; i < MAX_QUEUED; i++) await state.storage.put(`queue:0000000000000-filler${i}`, { id: `filler${i}`, queued_at: Date.now() });
+		});
+		const full = await (await mcp(app.access_token, "/mcp", { body: call("notes__add") })).json();
+		expect(full).toMatchObject({ result: { isError: true } });
+
+		await runInDurableObject(hubStub(), async (_, state) => {
+			for (const key of (await state.storage.list({ prefix: "queue:" })).keys()) await state.storage.delete(key);
+			await state.storage.delete("queuekey");
+		});
+		const keyless = await (await mcp(app.access_token, "/mcp", { body: call("notes__add") })).json();
+		expect(keyless).toMatchObject({ result: { isError: true } });
+		expect(await stored()).toHaveLength(0);
+	});
+
+	it("seals the way the Mac opens (shared vector)", async () => {
+		const privateKey = await crypto.subtle.importKey(
+			"jwk",
+			{ kty: "EC", crv: "P-256", ...vector.private_key },
+			{ name: "ECDH", namedCurve: "P-256" },
+			false,
+			["deriveBits"],
+		);
+		const opened = await open(privateKey, fromBase64(vector.sealed), vector.id);
+		expect(dec.decode(opened)).toBe(vector.plaintext);
+	});
+
+	it("forgets requests after a week", async () => {
+		const app = await offlineApp();
+		await mcp(app.access_token, "/mcp", { body: call("notes__add") });
+		await runInDurableObject(hubStub(), async (_, state) => {
+			for (const [key, item] of await state.storage.list<{ queued_at: number }>({ prefix: "queue:" })) {
+				await state.storage.put(key, { ...item, queued_at: Date.now() - QUEUE_TTL_MS - 1 });
+			}
+		});
+		expect(await runDurableObjectAlarm(hubStub())).toBe(true);
+		expect(await stored()).toHaveLength(0);
 	});
 });

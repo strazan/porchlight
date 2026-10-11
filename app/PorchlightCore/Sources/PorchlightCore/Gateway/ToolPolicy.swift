@@ -18,10 +18,34 @@ public struct ToolPolicy: Codable, Sendable, Hashable {
     public var defaultPermission: Default
     /// Tool name (as the server names it) → permission.
     public var overrides: [String: ToolPermission]
+    /// Tool name → whether calls made while the Mac is offline are saved for later, where
+    /// the owner changed it from the default (see `queuesOffline`).
+    public var offline: [String: Bool]
 
-    public init(defaultPermission: Default = .askForChanges, overrides: [String: ToolPermission] = [:]) {
+    public init(defaultPermission: Default = .askForChanges, overrides: [String: ToolPermission] = [:], offline: [String: Bool] = [:]) {
         self.defaultPermission = defaultPermission
         self.overrides = overrides
+        self.offline = offline
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case defaultPermission, overrides, offline
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        defaultPermission = try container.decode(Default.self, forKey: .defaultPermission)
+        overrides = try container.decode([String: ToolPermission].self, forKey: .overrides)
+        // Saved before offline queueing existed.
+        offline = try container.decodeIfPresent([String: Bool].self, forKey: .offline) ?? [:]
+    }
+
+    /// Whether a call to `tool` made while the Mac is offline is saved and run when it's back.
+    /// By default only tools that add without changing or deleting anything: their server says
+    /// they're neither read-only (nothing to wait for) nor destructive. Blocked tools never queue.
+    public func queuesOffline(_ tool: String, readOnly: Bool, destructive: Bool) -> Bool {
+        guard !readOnly, permission(for: tool, readOnly: readOnly) != .deny else { return false }
+        return offline[tool] ?? !destructive
     }
 
     /// `readOnly` is the tool's `readOnlyHint` annotation.
@@ -58,14 +82,17 @@ public struct ToolApprovalRequest: Sendable, Identifiable, Equatable {
     /// The tool's title, if it has one.
     public let title: String?
     public let arguments: JSONValue
+    /// When the app made the call, for one saved while the Mac was offline.
+    public let queuedAt: Date?
 
-    public init(clientID: String = "", clientName: String, server: String, tool: String, title: String?, arguments: JSONValue) {
+    public init(clientID: String = "", clientName: String, server: String, tool: String, title: String?, arguments: JSONValue, queuedAt: Date? = nil) {
         self.clientID = clientID
         self.clientName = clientName
         self.server = server
         self.tool = tool
         self.title = title
         self.arguments = arguments
+        self.queuedAt = queuedAt
     }
 }
 
@@ -107,8 +134,10 @@ public struct ActivityEvent: Sendable, Identifiable {
     public let tool: String?
     public let duration: Duration
     public let outcome: Outcome
+    /// When the app made the request, for one saved while the Mac was offline.
+    public let queuedAt: Date?
 
-    public init(date: Date, client: ClientIdentity, server: String?, method: String, tool: String?, duration: Duration, outcome: Outcome) {
+    public init(date: Date, client: ClientIdentity, server: String?, method: String, tool: String?, duration: Duration, outcome: Outcome, queuedAt: Date? = nil) {
         self.date = date
         self.client = client
         self.server = server
@@ -116,5 +145,6 @@ public struct ActivityEvent: Sendable, Identifiable {
         self.tool = tool
         self.duration = duration
         self.outcome = outcome
+        self.queuedAt = queuedAt
     }
 }

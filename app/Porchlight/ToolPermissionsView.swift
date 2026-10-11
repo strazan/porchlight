@@ -49,7 +49,7 @@ struct ToolPermissionsView: View {
     }
 
     private var summary: String {
-        let count = policy.overrides.count
+        let count = Set(policy.overrides.keys).union(policy.offline.keys).count
         return count == 0 ? "All tools on Default" : count == 1 ? "1 tool set individually" : "\(count) tools set individually"
     }
 
@@ -69,14 +69,24 @@ struct ToolPermissionsView: View {
                 }
             }
             Spacer(minLength: 12)
-            Picker("Permission", selection: binding(for: tool)) {
-                Text("Default (\(policy.defaultPermission(readOnly: tool.readOnly).title))").tag(ToolPermission?.none)
-                Divider()
-                ForEach(ToolPermission.allCases, id: \.self) { Text($0.title).tag(ToolPermission?.some($0)) }
+            VStack(alignment: .trailing, spacing: 4) {
+                Picker("Permission", selection: binding(for: tool)) {
+                    Text("Default (\(policy.defaultPermission(readOnly: tool.readOnly).title))").tag(ToolPermission?.none)
+                    Divider()
+                    ForEach(ToolPermission.allCases, id: \.self) { Text($0.title).tag(ToolPermission?.some($0)) }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                // Read-only calls can't wait: nobody would get the answer.
+                if !tool.readOnly {
+                    Toggle("Queue when offline", isOn: queueBinding(for: tool))
+                        .toggleStyle(.checkbox)
+                        .controlSize(.small)
+                        .disabled(policy.permission(for: tool.name, readOnly: false) == .deny)
+                        .help("While your Mac is offline, the relay saves calls to this tool and runs them when it's back, asking first if the tool is set to Ask.")
+                }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
             .frame(width: 170, alignment: .trailing)
         }
         .padding(.vertical, 4)
@@ -86,6 +96,14 @@ struct ToolPermissionsView: View {
         Binding(
             get: { policy.overrides[tool.name] },
             set: { policy.overrides[tool.name] = $0 }
+        )
+    }
+
+    /// Stores an override only when it differs from the default (on for additive tools).
+    private func queueBinding(for tool: Router.ToolSummary) -> Binding<Bool> {
+        Binding(
+            get: { policy.queuesOffline(tool.name, readOnly: tool.readOnly, destructive: !tool.additive) },
+            set: { policy.offline[tool.name] = $0 == tool.additive ? nil : $0 }
         )
     }
 

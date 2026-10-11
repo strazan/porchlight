@@ -96,6 +96,11 @@ final class AppModel {
     @ObservationIgnored var previewProbe: Result<Router.ProbeResult, Router.ProbeError>?
     @ObservationIgnored var previewImportCandidates: [ImportCandidate] = []
     @ObservationIgnored private var runner: Task<Void, Never>?
+    @ObservationIgnored private var catalogPush: Task<Void, Never>?
+    /// The apps the relay has a catalog for, so ones that lose access can be forgotten.
+    @ObservationIgnored private var catalogClients: Set<String> = []
+    @ObservationIgnored private var queuedSummary: [(app: String, outcome: QueuedOutcome)] = []
+    @ObservationIgnored private var queuedNotice: Task<Void, Never>?
     @ObservationIgnored private var router: Router?
     @ObservationIgnored private var shellEnvironment: [String: String]?
     @ObservationIgnored private var client: RelayClient?
@@ -103,6 +108,8 @@ final class AppModel {
     @ObservationIgnored private var approvalWaiters: [UUID: CheckedContinuation<ToolApproval, Never>] = [:]
     /// Unanswered tool approvals are declined after this long.
     private static let approvalTimeout: Duration = .seconds(120)
+    /// Requests saved while the Mac was offline have nobody waiting on them: ask for longer.
+    private static let queuedApprovalTimeout: Duration = .seconds(24 * 3600)
     private static let maxActivity = 500
     @ObservationIgnored private let power = PowerAssertion()
     @ObservationIgnored private var connectivity: ConnectivityWatcher?
@@ -287,6 +294,7 @@ final class AppModel {
         Task {
             await router.apply(servers)
             await router.warmUp()
+            scheduleCatalogPush()
         }
     }
 
@@ -327,6 +335,8 @@ final class AppModel {
             secret: secret,
             handler: router,
             appVersion: "app-0.0.1",
+            queueKey: Self.queueKey(),
+            ledger: QueueLedger(file: Self.supportDirectory.appending(path: "queue-finished.json")),
             onStatus: { [weak self] status in
                 Task { @MainActor in self?.relayStatusChanged(status) }
             },
@@ -344,6 +354,8 @@ final class AppModel {
     func stop() {
         runner?.cancel()
         runner = nil
+        catalogPush?.cancel()
+        catalogClients = []
         if let router { Task { await router.stopAll() } }
         router = nil
         client = nil
@@ -425,7 +437,7 @@ final class AppModel {
             log("\(request.clientName) wants to run \(request.tool) on \(request.server)")
             promptPanel.update(bringToFront: true)
             Task {
-                try? await Task.sleep(for: Self.approvalTimeout)
+                try? await Task.sleep(for: request.queuedAt == nil ? Self.approvalTimeout : Self.queuedApprovalTimeout)
                 if approvalWaiters[request.id] != nil {
                     log("No answer about \(request.tool) in time; declined")
                     answer(request, with: .deny)
@@ -509,7 +521,66 @@ final class AppModel {
     private func pushClientAccess() {
         guard let router else { return }
         let access = clientAccess
-        Task { await router.setClientAccess(access) }
+        Task {
+            await router.setClientAccess(access)
+            scheduleCatalogPush()
+        }
+    }
+
+    // MARK: Offline queue
+
+    /// The key the relay seals requests to while the Mac is offline, made once and kept in
+    /// the Keychain. (Losing it only loses what's queued at the time.)
+    private static func queueKey() -> QueueKey {
+        if let saved = Keychain.read("queueKey").flatMap({ Data(base64Encoded: $0) }),
+           let key = try? QueueKey(rawRepresentation: saved) {
+            return key
+        }
+        let key = QueueKey()
+        Keychain.write("queueKey", key.rawRepresentation.base64EncodedString())
+        return key
+    }
+
+    private static var supportDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "Porchlight")
+    }
+
+    /// Tells the relay, for each app, what it sees and may queue while the Mac is offline.
+    /// Debounced: servers, permissions and access often change several times in a row.
+    private func scheduleCatalogPush() {
+        guard let router, let client, case .relay(.connected) = state else { return }
+        let current = Set(clients.map(\.clientID)).subtracting([""])
+        let gone = catalogClients.subtracting(current)
+        catalogPush?.cancel()
+        catalogPush = Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            for id in gone { await client.sendOfflineCatalog(clientID: id, catalog: nil) }
+            for id in current.sorted() {
+                let catalog = await router.offlineCatalog(for: id)
+                guard !Task.isCancelled else { return }
+                await client.sendOfflineCatalog(clientID: id, catalog: catalog)
+            }
+            catalogClients = current
+        }
+    }
+
+    private func queuedFinished(_ item: QueuedRequest, _ outcome: QueuedOutcome) {
+        let age = item.queuedAt.formatted(.relative(presentation: .named))
+        switch outcome {
+        case .ran: log("Ran a request \(item.clientName) made \(age), while the Mac was offline")
+        case .failed: log("A request \(item.clientName) made \(age), while the Mac was offline, didn't go through")
+        case .unreadable: log("Couldn't read a request \(item.clientName) made \(age) (sealed to an earlier key); skipped")
+        }
+        queuedSummary.append((item.clientName, outcome))
+        queuedNotice?.cancel()
+        queuedNotice = Task {
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            let summary = queuedSummary
+            queuedSummary = []
+            QueuedNotice.post(summary)
+        }
     }
 
     private func relayEvent(_ event: RelayEvent) {
@@ -531,6 +602,9 @@ final class AppModel {
             }
         case .clientsChanged(let clients):
             self.clients = clients.sorted { $0.createdAt > $1.createdAt }
+            scheduleCatalogPush()
+        case .queuedFinished(let item, let outcome):
+            queuedFinished(item, outcome)
         }
     }
 
@@ -539,7 +613,9 @@ final class AppModel {
         state = .relay(status)
         switch status {
         case .connecting: break
-        case .connected: log("Relay connected")
+        case .connected:
+            log("Relay connected")
+            scheduleCatalogPush()
         case .disconnected(let reason): log("Relay disconnected: \(reason)")
         }
     }
@@ -622,7 +698,7 @@ final class AppModel {
         previewProbe = .success(Router.ProbeResult(serverName: "obsidian-local-rest-api", tools: [
             .init(name: "search", title: "Search notes", description: "Full-text search across the vault.", readOnly: true, destructive: false),
             .init(name: "get_note", title: "Read a note", description: nil, readOnly: true, destructive: false),
-            .init(name: "append_to_note", title: "Append to a note", description: "Adds text to the end of a note.", readOnly: false, destructive: false),
+            .init(name: "append_to_note", title: "Append to a note", description: "Adds text to the end of a note.", readOnly: false, destructive: false, additive: true),
             .init(name: "delete_note", title: "Delete a note", description: "Moves a note to the trash.", readOnly: false, destructive: true),
         ]))
         previewImportCandidates = [

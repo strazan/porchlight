@@ -31,20 +31,54 @@ export interface ClientSummary {
 	created_at: number;
 }
 
+/**
+ * What an app sees at one path (`/mcp` or `/mcp/<name>`) while the host is offline, as the
+ * host last described it. See "Offline queue" in PROTOCOL.md.
+ */
+export interface CatalogPath {
+	/** The `initialize` result to answer with. */
+	initialize: Record<string, unknown>;
+	/** The `tools/list` result's tools. */
+	tools: unknown[];
+	/** Tools whose calls may be saved for when the host is back. */
+	queueable: string[];
+}
+
+export interface Catalog {
+	/** Protocol versions the host speaks; a client asking for one of them gets it. */
+	protocol_versions: string[];
+	paths: Record<string, CatalogPath>;
+}
+
+/** A request saved while the host was offline. `sealed` can only be opened by the host. */
+export interface QueuedFrame {
+	id: string;
+	client_id: string;
+	client_name: string;
+	path: string;
+	/** Unix milliseconds. */
+	queued_at: number;
+	/** base64(ephemeral P-256 public key (65 bytes) ‖ nonce (12) ‖ AES-GCM ciphertext and tag). */
+	sealed: string;
+}
+
 export type RelayToHost =
 	| { type: "req"; id: string; method: string; path: string; headers: HeaderList; body_b64: string }
+	| ({ type: "queued" } & QueuedFrame)
 	| { type: "cancel"; id: string }
 	| ({ type: "pair_request"; id: string; code: string } & PairingInfo)
 	| { type: "clients"; items: ClientSummary[] };
 
 export type HostToRelay =
-	| { type: "hello"; proto: number; app_version: string }
+	| { type: "hello"; proto: number; app_version: string; queue_key?: string }
 	| { type: "res_start"; id: string; status: number; headers: HeaderList }
 	| { type: "res_chunk"; id: string; data_b64: string }
 	| { type: "res_end"; id: string }
 	| { type: "pair_decision"; id: string; allow: boolean }
 	| { type: "list_clients" }
-	| { type: "revoke_client"; grant_id: string };
+	| { type: "revoke_client"; grant_id: string }
+	| { type: "offline_catalog"; client_id: string; catalog: Catalog | null }
+	| { type: "queued_done"; id: string };
 
 export function parseHostFrame(raw: string | ArrayBuffer): HostToRelay | null {
 	if (typeof raw !== "string") return null;
@@ -73,9 +107,26 @@ export function parseHostFrame(raw: string | ArrayBuffer): HostToRelay | null {
 			return m as HostToRelay;
 		case "revoke_client":
 			return typeof m.grant_id === "string" ? (m as HostToRelay) : null;
+		case "offline_catalog":
+			return typeof m.client_id === "string" && (m.catalog === null || isCatalog(m.catalog)) ? (m as HostToRelay) : null;
+		case "queued_done":
+			return typeof m.id === "string" ? (m as HostToRelay) : null;
 		default:
 			return null;
 	}
+}
+
+function isCatalog(value: unknown): value is Catalog {
+	if (typeof value !== "object" || value === null) return false;
+	const c = value as Record<string, unknown>;
+	if (!Array.isArray(c.protocol_versions) || typeof c.paths !== "object" || c.paths === null) return false;
+	return Object.values(c.paths as Record<string, unknown>).every((path) => {
+		const p = path as Record<string, unknown> | null;
+		return (
+			typeof p === "object" && p !== null && typeof p.initialize === "object" && p.initialize !== null
+			&& Array.isArray(p.tools) && Array.isArray(p.queueable)
+		);
+	});
 }
 
 export function toBase64(bytes: Uint8Array): string {

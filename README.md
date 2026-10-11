@@ -55,6 +55,8 @@ you first.
   free plan, at a `workers.dev` address. No domain needed.
 - **Keeps itself up.** Restarts crashed servers and reconnects after sleep or network
   changes. No open ports: your Mac only connects out.
+- **Works while your Mac sleeps.** Asking Claude to add a reminder while your Mac is off?
+  The request waits, encrypted, and runs when the Mac is back.
 
 ## How it works
 
@@ -74,6 +76,9 @@ flowchart LR
    forwards the request to the right server. The answer goes back the same way.
 
 The relay is a pipe: it keeps sign-in records, never your files, notes or tool results.
+When your Mac is offline, apps still see your tools, and calls that only add something
+(like creating a reminder) wait at the relay, encrypted so only your Mac can read them,
+and run when it's back.
 
 ## Getting started
 
@@ -125,6 +130,8 @@ from idle-sleeping while it's on (Settings → General).
   Porchlight service in between.
 - Apps only see the servers you allow, blocked tools are hidden entirely, and tool calls
   that can change things ask first by default.
+- Requests saved while your Mac is offline are encrypted to a key only your Mac has, kept
+  for at most 7 days, and go through the same permissions when they run.
 
 Found a security issue? Please report it privately through GitHub's
 [security advisories](https://github.com/strazan/porchlight/security/advisories/new)

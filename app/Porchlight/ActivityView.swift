@@ -63,9 +63,15 @@ struct ActivityView: View {
                 }
                 .width(min: 90, ideal: 120)
                 TableColumn("Request") { event in
-                    Text(event.tool ?? event.method)
-                        .font(.body.monospaced())
-                        .help(event.method)
+                    HStack(spacing: 6) {
+                        Text(event.tool ?? event.method)
+                            .font(.body.monospaced())
+                            .help(event.method)
+                        if let queuedAt = event.queuedAt {
+                            Badge(text: "queued", color: .orange)
+                                .help("Made \(queuedAt.formatted(.relative(presentation: .named))), while your Mac was offline")
+                        }
+                    }
                 }
                 .width(min: 120, ideal: 190)
                 TableColumn("Server") { event in

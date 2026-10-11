@@ -187,7 +187,7 @@ private struct ApprovalView: View {
             clientID: request.clientID,
             appName: request.clientName,
             title: "\(request.clientName) wants to use \(request.title ?? request.tool)",
-            subtitle: "\(request.tool) on \(request.server)"
+            subtitle: subtitle
         ) {
             ArgumentsView(arguments: request.arguments)
         } buttons: {
@@ -200,6 +200,14 @@ private struct ApprovalView: View {
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
         }
+    }
+}
+
+extension ApprovalView {
+    private var subtitle: String {
+        let what = "\(request.tool) on \(request.server)"
+        guard let queuedAt = request.queuedAt else { return what }
+        return "\(what). Asked \(queuedAt.formatted(.relative(presentation: .named))), while your Mac was offline."
     }
 }
 

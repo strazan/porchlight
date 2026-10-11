@@ -13,6 +13,8 @@ struct GatedEndpoint: MCPEndpoint {
     let client: ClientIdentity
     /// The servers this app may use, or nil for all.
     let allowed: Set<String>?
+    /// When the app made the request, if it was saved while the Mac was offline.
+    var queuedAt: Date? = nil
     let router: Router
 
     func call(_ request: JSONValue, onProgress: ProgressSink?) async -> JSONValue {
@@ -28,7 +30,7 @@ struct GatedEndpoint: MCPEndpoint {
                 tool = target.tool
                 let decision = await router.authorize(
                     server: target.server, tool: target.tool,
-                    arguments: request["params"]?["arguments"] ?? .object([:]), client: client
+                    arguments: request["params"]?["arguments"] ?? .object([:]), client: client, queuedAt: queuedAt
                 )
                 if case .denied(let reason) = decision {
                     await record(method, server, tool, started, .denied(reason))
@@ -62,7 +64,7 @@ struct GatedEndpoint: MCPEndpoint {
     private func record(_ method: String, _ server: String?, _ tool: String?, _ started: ContinuousClock.Instant, _ outcome: ActivityEvent.Outcome) async {
         await router.record(ActivityEvent(
             date: Date(), client: client, server: server, method: method, tool: tool,
-            duration: ContinuousClock.now - started, outcome: outcome
+            duration: ContinuousClock.now - started, outcome: outcome, queuedAt: queuedAt
         ))
     }
 

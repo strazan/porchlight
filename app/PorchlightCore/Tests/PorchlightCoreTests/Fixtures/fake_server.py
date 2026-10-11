@@ -4,7 +4,9 @@
 tools: echo (returns its args), slow (sends progress, then answers after `seconds`).
 Exits on `tools/call` of `crash`. Counts initialize calls in the `stats` tool.
 Also one prompt (`greet`) and one resource (`fake://<name>/readme`). The server's name
-comes from FAKE_NAME so tests can tell several apart.
+comes from FAKE_NAME so tests can tell several apart. With FAKE_MORE_TOOLS set, it also
+lists `add` (additive: neither read-only nor destructive) and `remove` (no hints, so
+destructive), which answer like echo.
 """
 import json
 import os
@@ -52,11 +54,15 @@ for line in sys.stdin:
                     "capabilities": {"tools": {}, "prompts": {}, "resources": {}},
                     "serverInfo": {"name": NAME, "version": "1"}})
     elif method == "tools/list":
-        result(id, {"tools": [{"name": "echo", "inputSchema": {"type": "object"},
-                               "annotations": {"readOnlyHint": True}}]})
+        tools = [{"name": "echo", "inputSchema": {"type": "object"}, "annotations": {"readOnlyHint": True}}]
+        if os.environ.get("FAKE_MORE_TOOLS"):
+            tools += [{"name": "add", "inputSchema": {"type": "object"},
+                       "annotations": {"readOnlyHint": False, "destructiveHint": False}},
+                      {"name": "remove", "inputSchema": {"type": "object"}}]
+        result(id, {"tools": tools})
     elif method == "tools/call":
         name = params.get("name")
-        if name == "echo":
+        if name in ("echo", "add", "remove"):
             result(id, text(json.dumps({"id": id, "args": params.get("arguments"), "server": NAME})))
         elif name == "slow":
             threading.Thread(target=slow, args=(id, params)).start()

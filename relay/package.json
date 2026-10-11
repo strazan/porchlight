@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "node e2e/sdk-oauth.mjs",
+    "e2e:queue": "node e2e/offline-queue.mjs",
     "bundle": "node scripts/bundle.mjs"
   },
   "devDependencies": {

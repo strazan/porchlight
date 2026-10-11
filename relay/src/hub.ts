@@ -1,10 +1,13 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Pairing } from "./consent";
 import { OWNER, oauthApi } from "./oauth";
+import { answerOffline } from "./offline";
 import {
+	type Catalog,
 	type ClientSummary,
 	type HeaderList,
 	type PairingInfo,
+	type QueuedFrame,
 	type RelayToHost,
 	PING,
 	PONG,
@@ -12,6 +15,7 @@ import {
 	parseHostFrame,
 	toBase64,
 } from "./protocol";
+import { seal } from "./seal";
 
 const START_TIMEOUT_MS = 60_000;
 // As long as the consent page's handle stays valid.
@@ -19,6 +23,10 @@ const PAIRING_TTL_MS = 10 * 60_000;
 // KV listings can miss writes (new or revoked grants) for up to a minute; bridge longer.
 const KV_LAG_MS = 5 * 60_000;
 const MAX_REQUEST_BODY = 8 * 1024 * 1024;
+// Requests saved while the host is offline: how long they keep, how many, how big.
+export const QUEUE_TTL_MS = 7 * 24 * 3600_000;
+export const MAX_QUEUED = 100;
+const MAX_QUEUED_BODY = 256 * 1024;
 
 // Headers that describe this hop, or credentials meant for the relay, never the host.
 const STRIP_REQUEST = new Set([
@@ -27,6 +35,7 @@ const STRIP_REQUEST = new Set([
 	"content-length",
 	"host",
 	"keep-alive",
+	"porchlight-grant-id",
 	"proxy-authorization",
 	"te",
 	"trailer",
@@ -46,6 +55,12 @@ interface PairingRecord extends PairingInfo {
 }
 
 export type PairingState = PairingRecord["state"] | "expired" | "offline";
+
+/** Stored under `queue:<13-digit ms>-<id>`, so listing returns them oldest first. */
+interface QueuedItem extends QueuedFrame {
+	/** So revoking the app drops what it queued. */
+	grant_id: string;
+}
 
 interface Pending {
 	ws: WebSocket;
@@ -86,6 +101,11 @@ export class Hub extends DurableObject<Env> {
 			if (record.state === "pending" && record.expiresAt > Date.now()) {
 				this.sendPairRequest(server, key.slice("pair:".length), record);
 			}
+		}
+		// And requests saved while it was away, oldest first. Each stays until the host
+		// says it's done, so one interrupted here comes again next time.
+		for (const item of (await this.ctx.storage.list<QueuedItem>({ prefix: "queue:" })).values()) {
+			if (item.queued_at + QUEUE_TTL_MS > Date.now()) this.sendQueued(server, item);
 		}
 		return new Response(null, { status: 101, webSocket: client });
 	}
@@ -190,7 +210,84 @@ export class Hub extends DurableObject<Env> {
 		if (!oauth) return;
 		await oauth.revokeGrant(grantId, OWNER);
 		await this.ctx.storage.put(`revoked:${grantId}`, Date.now());
+		for (const [key, item] of await this.ctx.storage.list<QueuedItem>({ prefix: "queue:" })) {
+			if (item.grant_id === grantId) await this.ctx.storage.delete(key);
+		}
 		await this.sendClients(ws);
+	}
+
+	// MARK: Offline queue
+
+	/** Answers from the app's catalog when there is one; otherwise a plain "offline" error. */
+	private async offline(request: Request, body: Uint8Array): Promise<Response> {
+		const clientID = decodeURIComponent(request.headers.get("porchlight-client-id") ?? "");
+		const catalog = clientID ? await this.ctx.storage.get<Catalog>(`catalog:${clientID}`) : undefined;
+		if (catalog) {
+			const path = new URL(request.url).pathname;
+			const answered = await answerOffline(request.method, path, body, catalog, (message) =>
+				this.enqueue(request, path, message),
+			);
+			if (answered) return answered;
+		}
+		return offline(body);
+	}
+
+	private async enqueue(request: Request, path: string, message: Record<string, unknown>): Promise<string | null> {
+		const key = await this.ctx.storage.get<string>("queuekey");
+		if (!key) return null;
+		const plaintext = new TextEncoder().encode(JSON.stringify(message));
+		if (plaintext.length > MAX_QUEUED_BODY) return null;
+		if ((await this.ctx.storage.list({ prefix: "queue:" })).size >= MAX_QUEUED) return null;
+
+		const id = crypto.randomUUID();
+		const now = Date.now();
+		const header = (name: string) => decodeURIComponent(request.headers.get(name) ?? "");
+		const item: QueuedItem = {
+			id,
+			grant_id: header("porchlight-grant-id"),
+			client_id: header("porchlight-client-id"),
+			client_name: header("porchlight-client-name"),
+			path,
+			queued_at: now,
+			sealed: toBase64(await seal(fromBase64(key), plaintext, id)),
+		};
+		await this.ctx.storage.put(`queue:${String(now).padStart(13, "0")}-${id}`, item);
+		await this.scheduleCleanup(now + QUEUE_TTL_MS);
+		// The host may have come back while this was being saved.
+		const ws = this.host();
+		if (ws) this.sendQueued(ws, item);
+		return id;
+	}
+
+	private sendQueued(ws: WebSocket, item: QueuedItem): void {
+		const { grant_id: _, ...frame } = item;
+		this.send(ws, { type: "queued", ...frame });
+	}
+
+	private async queuedDone(id: string): Promise<void> {
+		for (const [key, item] of await this.ctx.storage.list<QueuedItem>({ prefix: "queue:" })) {
+			if (item.id === id) await this.ctx.storage.delete(key);
+		}
+	}
+
+	private async scheduleCleanup(at: number): Promise<void> {
+		const current = await this.ctx.storage.getAlarm();
+		if (current === null || current > at) await this.ctx.storage.setAlarm(at);
+	}
+
+	/** Drops expired queued requests and pairings, then waits for the next to expire. */
+	override async alarm(): Promise<void> {
+		const now = Date.now();
+		let next: number | undefined;
+		for (const [key, item] of await this.ctx.storage.list<QueuedItem>({ prefix: "queue:" })) {
+			const expires = item.queued_at + QUEUE_TTL_MS;
+			if (expires <= now) await this.ctx.storage.delete(key);
+			else next = Math.min(next ?? expires, expires);
+		}
+		for (const [key, record] of await this.ctx.storage.list<PairingRecord>({ prefix: "pair:" })) {
+			if (record.expiresAt <= now) await this.ctx.storage.delete(key);
+		}
+		if (next !== undefined) await this.ctx.storage.setAlarm(next);
 	}
 
 	private async oauth() {
@@ -213,7 +310,7 @@ export class Hub extends DurableObject<Env> {
 	private async forward(request: Request): Promise<Response> {
 		const body = new Uint8Array(await request.arrayBuffer());
 		const ws = this.host();
-		if (!ws) return offline(body);
+		if (!ws) return this.offline(request, body);
 		if (body.length > MAX_REQUEST_BODY) return new Response("Request body too large", { status: 413 });
 
 		const url = new URL(request.url);
@@ -272,7 +369,17 @@ export class Hub extends DurableObject<Env> {
 				return this.revokeClient(ws, frame.grant_id);
 			case "hello":
 				ws.serializeAttachment({ proto: frame.proto, app_version: frame.app_version });
+				// The key queued requests are sealed to; hosts without one get no queue.
+				if (frame.queue_key && fromBase64(frame.queue_key).length === 65) {
+					await this.ctx.storage.put("queuekey", frame.queue_key);
+				}
 				return;
+			case "offline_catalog":
+				if (frame.catalog) await this.ctx.storage.put(`catalog:${frame.client_id}`, frame.catalog);
+				else await this.ctx.storage.delete(`catalog:${frame.client_id}`);
+				return;
+			case "queued_done":
+				return this.queuedDone(frame.id);
 			case "res_start": {
 				const p = this.pending.get(frame.id);
 				if (!p || p.started) return;

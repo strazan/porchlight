@@ -75,7 +75,8 @@ Connect a client with [MCP Inspector](https://github.com/modelcontextprotocol/in
 (`npx @modelcontextprotocol/inspector`, Streamable HTTP, `http://localhost:8787/mcp`). For
 an automated end-to-end check with the official MCP SDK, run a CLI host that approves
 everything and then `npm run e2e` in `relay/` (see the comment at the top of
-`relay/e2e/sdk-oauth.mjs`).
+`relay/e2e/sdk-oauth.mjs`). `npm run e2e:queue` checks the offline queue the same way:
+it stops and restarts a CLI host around a call made while it's away.
 
 ## Code signing
 

@@ -1,0 +1,11 @@
+{
+	"about": "A queued request sealed to `private_key` (P-256, d as base64url, as in a JWK). See make-queue-vector.mjs.",
+	"private_key": {
+		"d": "FDSO30gjY4lD9FzQhTOIEBtQlvmeDWwBVI3latI4kYc",
+		"x": "9DSKM4QdMJRjmMCwpu_2aQQhcqyvvuKxTXEq3mNonWQ",
+		"y": "olTozbSVqJDCgVrC3HAdveXCMD2w2NHgoFwy5KeqgJU"
+	},
+	"id": "3f1c9a52-0d7e-4b8a-9a61-6c2f8f3e7b10",
+	"sealed": "BP3gVE3OYvAaqiMw9Nqt4hgE8PP5yGmAs/JkS/86VfEQgVDsJXNJFjXrhXW8bZuot2vHPzvFkaOmg29jwHFknLNqWlqiFWuAFAQ7fKER5ytIRGvMXfEmdQSpHzupi8hGq3MrDLNqktG9yXhy75ooUf5ghu6VUMuRD/CPhzRQoWrDmy6u9CrfpJk7qyBatVMPD2QgV+ZbryvblhiG9el3vdJhZrlmzt2RrLN8v8nhaFHJGokSI2onCDMApqbl2stQD2EU/AmEAd7mj1h6LKU37pjJypGL31w2INch",
+	"plaintext": "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"reminders__create_reminder\",\"arguments\":{\"title\":\"Oat milk\"}}}"
+}

@@ -15,6 +15,9 @@ let usage = """
       --check            Connect to each enabled server, report what answers, and exit
       --allow-tools      Run every tool without asking (default: ask on the terminal for
                          tools that don't declare themselves read-only)
+      --queue-key <file> While this host is offline, let the relay save calls to tools
+                         that only add something, sealed to the key in <file> (created if
+                         missing), and run them when it's back
 
     The relay's shared secret is read from PORCHLIGHT_SECRET.
 
@@ -32,6 +35,7 @@ var relayArg: String?
 var configArg: String?
 var checkOnly = false
 var allowTools = false
+var queueKeyArg: String?
 var name = "default"
 var command: [String] = []
 var args = CommandLine.arguments.dropFirst()
@@ -48,6 +52,9 @@ while let arg = args.popFirst() {
         configArg = value
     case "--check": checkOnly = true
     case "--allow-tools": allowTools = true
+    case "--queue-key":
+        guard let value = args.popFirst() else { fail("--queue-key needs a value") }
+        queueKeyArg = value
     case "--": command = Array(args); args.removeAll()
     case "-h", "--help": print(usage); exit(0)
     default: fail("unknown argument \(arg)")
@@ -137,12 +144,26 @@ for server in servers where server.enabled {
     stderrLog("serving \(server.name): \(server.commandLineString)")
 }
 
+/// The queue key in `path`, made and saved there (readable only by you) if it's missing.
+func loadQueueKey(_ path: String) -> QueueKey {
+    let url = URL(fileURLWithPath: path)
+    if let saved = try? Data(contentsOf: url), let key = try? QueueKey(rawRepresentation: saved) { return key }
+    let key = QueueKey()
+    guard FileManager.default.createFile(atPath: url.path, contents: key.rawRepresentation, attributes: [.posixPermissions: 0o600]) else {
+        fail("couldn't write the queue key to \(path)")
+    }
+    return key
+}
+let queueKey = queueKeyArg.map(loadQueueKey)
+
 let (events, eventSink) = AsyncStream.makeStream(of: RelayEvent.self)
 let client = RelayClient(
     url: relayURL,
     secret: secret,
     handler: router,
     appVersion: "cli-0.0.1",
+    queueKey: queueKey,
+    ledger: QueueLedger(file: queueKeyArg.map { URL(fileURLWithPath: $0 + ".finished.json") }),
     onStatus: { status in
         switch status {
         case .connecting: stderrLog("relay: connecting to \(relayURL.absoluteString)")
@@ -171,6 +192,13 @@ Task {
         case .clientsChanged(let clients):
             let names = clients.map(\.clientName)
             stderrLog("apps with access: \(names.isEmpty ? "none" : names.joined(separator: ", "))")
+            // What each app sees, and may queue, while this host is offline.
+            guard queueKey != nil else { continue }
+            for clientID in Set(clients.map(\.clientID)) where !clientID.isEmpty {
+                await client.sendOfflineCatalog(clientID: clientID, catalog: await router.offlineCatalog(for: clientID))
+            }
+        case .queuedFinished(let item, let outcome):
+            stderrLog("queued request from \(item.clientName), made \(item.queuedAt.formatted(.relative(presentation: .named))): \(outcome)")
         }
     }
 }

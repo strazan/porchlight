@@ -18,9 +18,14 @@ public actor RelayClient {
     private let appVersion: String
     private let onStatus: @Sendable (Status) -> Void
     private let onEvent: @Sendable (RelayEvent) -> Void
+    private let queueKey: QueueKey?
+    private let ledger: QueueLedger
     private let session = URLSession(configuration: .default)
 
     private var inflight: [String: Task<Void, Never>] = [:]
+    /// Queued requests being run. Unlike `inflight`, they outlive the connection: nobody is
+    /// waiting on them, and an approval prompt may still be open.
+    private var queuedRunning: Set<String> = []
     private var socket: URLSessionWebSocketTask?
     private var backoff = 1.0
     private var backoffWait: Task<Void, Never>?
@@ -37,6 +42,8 @@ public actor RelayClient {
         secret: String,
         handler: any HTTPHandler,
         appVersion: String = "dev",
+        queueKey: QueueKey? = nil,
+        ledger: QueueLedger = QueueLedger(),
         onStatus: @escaping @Sendable (Status) -> Void = { _ in },
         onEvent: @escaping @Sendable (RelayEvent) -> Void = { _ in }
     ) {
@@ -44,6 +51,8 @@ public actor RelayClient {
         self.secret = secret
         self.handler = handler
         self.appVersion = appVersion
+        self.queueKey = queueKey
+        self.ledger = ledger
         self.onStatus = onStatus
         self.onEvent = onEvent
     }
@@ -63,6 +72,14 @@ public actor RelayClient {
     /// Revokes a client's access; the updated list arrives as `.clientsChanged`.
     public func revokeClient(_ grantID: String) async {
         try? await socket?.send(.string(HostFrame.revokeClient(grantID: grantID)))
+    }
+
+    /// Tells the relay what an app sees while the Mac is offline (see `Router.offlineCatalog`),
+    /// or with nil, to forget it. Returns false if not connected.
+    @discardableResult
+    public func sendOfflineCatalog(clientID: String, catalog: JSONValue?) async -> Bool {
+        guard let socket else { return false }
+        return (try? await socket.send(.string(HostFrame.offlineCatalog(clientID: clientID, catalog: catalog)))) != nil
     }
 
     /// Connects and reconnects (with jittered backoff) until the calling task is cancelled.
@@ -131,7 +148,7 @@ public actor RelayClient {
         if Task.isCancelled { return }
 
         do {
-            try await ws.send(.string(HostFrame.hello(appVersion: appVersion)))
+            try await ws.send(.string(HostFrame.hello(appVersion: appVersion, queueKey: queueKey?.publicKey)))
         } catch {
             throw RelayError.handshake(status: (ws.response as? HTTPURLResponse)?.statusCode, underlying: error)
         }
@@ -178,6 +195,13 @@ public actor RelayClient {
             }
         case .cancel(let id):
             inflight.removeValue(forKey: id)?.cancel()
+        case .queued(let item):
+            if ledger.contains(item.id) {
+                // Finished before, but the relay didn't hear about it.
+                Task { try? await ws.send(.string(HostFrame.queuedDone(id: item.id))) }
+            } else if queuedRunning.insert(item.id).inserted {
+                Task { await self.runQueued(item) }
+            }
         case .event(let event):
             onEvent(event)
         case .unknown:
@@ -187,6 +211,33 @@ public actor RelayClient {
 
     private func finished(_ id: String) {
         inflight.removeValue(forKey: id)
+    }
+
+    /// Runs a saved request like a live one (same access rules and permissions, with the
+    /// time it was made), then tells the relay it's done, on whichever connection is current.
+    private func runQueued(_ item: QueuedRequest) async {
+        var outcome: QueuedOutcome = .unreadable
+        if let queueKey, let body = try? queueKey.open(item.sealed, associated: item.id) {
+            let collected = CollectedResponse()
+            let encode = { (value: String) in value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "" }
+            let request = HTTPRequest(
+                id: "queued-\(item.id)", method: "POST", path: item.path,
+                headers: [
+                    ("content-type", "application/json"),
+                    ("accept", "application/json"),
+                    ("porchlight-client-id", encode(item.clientID)),
+                    ("porchlight-client-name", encode(item.clientName)),
+                    (Router.queuedAtHeader, item.queuedAt.formatted(.iso8601)),
+                ],
+                body: body
+            )
+            await handler.handle(request, collected.responder)
+            outcome = collected.succeeded ? .ran : .failed
+        }
+        ledger.add(item.id)
+        queuedRunning.remove(item.id)
+        onEvent(.queuedFinished(item, outcome))
+        try? await socket?.send(.string(HostFrame.queuedDone(id: item.id)))
     }
 
     /// Sends go straight to the socket the request arrived on. If that socket has since
@@ -221,5 +272,34 @@ public enum RelayError: LocalizedError {
         case .handshake(let status?, _): "Relay handshake failed (HTTP \(status))"
         case .handshake(nil, let underlying): "Could not reach relay: \(underlying.localizedDescription)"
         }
+    }
+}
+
+/// How a queued request went, for the app to sum up.
+public enum QueuedOutcome: Sendable, Equatable {
+    case ran
+    /// Declined, blocked, or the tool reported an error.
+    case failed
+    /// It couldn't be opened, e.g. sealed to this Mac's previous key.
+    case unreadable
+}
+
+/// Collects a response nobody is waiting for, just to tell whether the call worked.
+private final class CollectedResponse: Sendable {
+    private let state = Locked((status: 0, body: Data()))
+
+    var responder: HTTPResponder {
+        HTTPResponder(
+            start: { status, _ in self.state.withLock { $0.status = status } },
+            chunk: { data in self.state.withLock { $0.body.append(data) } },
+            end: {}
+        )
+    }
+
+    /// A 2xx answer that isn't a JSON-RPC error or a tool result marked as one.
+    var succeeded: Bool {
+        let (status, body) = state.value
+        guard (200..<300).contains(status), let response = try? JSONValue.parse(body) else { return false }
+        return response["error"] == nil && response["result"]?["isError"] != .bool(true)
     }
 }

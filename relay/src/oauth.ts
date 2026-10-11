@@ -49,7 +49,7 @@ export function oauthApi(origin: string, env: Env): OAuthHelpers {
 async function forwardToHost(
 	request: Request,
 	env: Env,
-	ctx: ExecutionContext & { props?: GrantProps; auth?: { clientId?: string } },
+	ctx: ExecutionContext & { props?: GrantProps; auth?: { clientId?: string; token?: string } },
 ): Promise<Response> {
 	const headers = new Headers(request.headers);
 	for (const name of [...headers.keys()]) {
@@ -57,6 +57,8 @@ async function forwardToHost(
 	}
 	headers.set("porchlight-client-id", encodeURIComponent(ctx.auth?.clientId ?? ""));
 	headers.set("porchlight-client-name", encodeURIComponent(ctx.props?.clientName ?? ""));
+	// For the Hub only (it doesn't reach the host): what this app queues is dropped with its grant.
+	headers.set("porchlight-grant-id", encodeURIComponent(grantIdFromToken(ctx.auth?.token)));
 	return hub(env).fetch(new Request(request, { headers }));
 }
 
@@ -132,6 +134,12 @@ async function submitAuthorize(request: Request, env: Env, origin: string): Prom
 	});
 	approved.headers.set("location", redirectTo);
 	return new Response(null, { status: 302, headers: approved.headers });
+}
+
+/** Access tokens are `userId:grantId:secret`, like codes; "" if that ever changes. */
+function grantIdFromToken(token: string | undefined): string {
+	const parts = token?.split(":") ?? [];
+	return parts.length === 3 ? parts[1]! : "";
 }
 
 /** Authorization codes are `userId:grantId:secret`; "" if that ever changes. */

@@ -114,14 +114,36 @@ public struct PairedClient: Sendable, Identifiable, Equatable {
     }
 }
 
+/// A request an app made while the Mac was offline, saved by the relay, still sealed.
+public struct QueuedRequest: Sendable, Equatable {
+    public let id: String
+    public let clientID: String
+    public let clientName: String
+    public let path: String
+    public let queuedAt: Date
+    public let sealed: Data
+
+    public init(id: String, clientID: String, clientName: String, path: String, queuedAt: Date, sealed: Data) {
+        self.id = id
+        self.clientID = clientID
+        self.clientName = clientName
+        self.path = path
+        self.queuedAt = queuedAt
+        self.sealed = sealed
+    }
+}
+
 /// Things the relay tells the host, other than tunneled requests.
 public enum RelayEvent: Sendable {
     case pairingRequested(PairingRequest)
     case clientsChanged([PairedClient])
+    /// A request saved while the Mac was offline has run (or couldn't).
+    case queuedFinished(QueuedRequest, QueuedOutcome)
 }
 
 enum RelayFrame {
     case req(HTTPRequest)
+    case queued(QueuedRequest)
     case cancel(id: String)
     case event(RelayEvent)
     case pong
@@ -149,6 +171,20 @@ enum RelayFrame {
         case "cancel":
             guard let id = msg["id"]?.stringValue else { return .unknown }
             return .cancel(id: id)
+        case "queued":
+            guard let id = msg["id"]?.stringValue,
+                  let path = msg["path"]?.stringValue,
+                  let sealed = msg["sealed"]?.stringValue.flatMap({ Data(base64Encoded: $0) })
+            else { return .unknown }
+            let millis: Double = switch msg["queued_at"] {
+            case .int(let i)?: Double(i)
+            case .double(let d)?: d
+            default: 0
+            }
+            return .queued(QueuedRequest(
+                id: id, clientID: msg["client_id"]?.stringValue ?? "", clientName: msg["client_name"]?.stringValue ?? "",
+                path: path, queuedAt: Date(timeIntervalSince1970: millis / 1000), sealed: sealed
+            ))
         case "pair_request":
             guard let id = msg["id"]?.stringValue,
                   let code = msg["code"]?.stringValue,
@@ -184,8 +220,19 @@ enum RelayFrame {
 }
 
 enum HostFrame {
-    static func hello(appVersion: String) -> String {
-        encode(["type": .string("hello"), "proto": .int(Int64(RelayProtocol.version)), "app_version": .string(appVersion)])
+    static func hello(appVersion: String, queueKey: String? = nil) -> String {
+        var frame: [String: JSONValue] = ["type": .string("hello"), "proto": .int(Int64(RelayProtocol.version)), "app_version": .string(appVersion)]
+        if let queueKey { frame["queue_key"] = .string(queueKey) }
+        return encode(frame)
+    }
+
+    /// `catalog` nil: forget what this app sees offline.
+    static func offlineCatalog(clientID: String, catalog: JSONValue?) -> String {
+        encode(["type": .string("offline_catalog"), "client_id": .string(clientID), "catalog": catalog ?? .null])
+    }
+
+    static func queuedDone(id: String) -> String {
+        encode(["type": .string("queued_done"), "id": .string(id)])
     }
 
     static func resStart(id: String, status: Int, headers: HeaderList) -> String {
