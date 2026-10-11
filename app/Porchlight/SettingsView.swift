@@ -179,7 +179,7 @@ private struct ServerRow: View {
 
 private struct ClientsTab: View {
     @Environment(AppModel.self) private var model
-    @State private var revoking: PairedClient?
+    @State private var revoking: AppModel.ConnectedApp?
     @State private var editingAccess: PairedClient?
 
     var body: some View {
@@ -192,7 +192,7 @@ private struct ClientsTab: View {
                             systemImage: "network.slash",
                             description: Text("Turn Porchlight on to see which apps have access.")
                         )
-                    } else if model.clients.isEmpty {
+                    } else if model.apps.isEmpty {
                         ContentUnavailableView {
                             Label("No Apps Yet", systemImage: "person.2")
                         } description: {
@@ -201,11 +201,11 @@ private struct ClientsTab: View {
                             CopyButton(text: model.endpoint, label: "Copy Connector URL")
                         }
                     } else {
-                        List(model.clients) { client in
-                            ClientRow(client: client, access: model.access(for: client.clientID)) {
-                                editingAccess = client
+                        List(model.apps) { app in
+                            ClientRow(app: app, access: model.access(for: app.id)) {
+                                editingAccess = app.latest
                             } revoke: {
-                                revoking = client
+                                revoking = app
                             }
                         }
                         .listStyle(.inset)
@@ -215,7 +215,7 @@ private struct ClientsTab: View {
                 .frame(maxHeight: .infinity)
             } bar: {
                 HStack {
-                    Text(model.clients.count == 1 ? "1 app" : "\(model.clients.count) apps")
+                    Text(model.apps.count == 1 ? "1 app" : "\(model.apps.count) apps")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.leading, 8)
@@ -234,19 +234,21 @@ private struct ClientsTab: View {
         .onAppear { model.refreshClients() }
         .sheet(item: $editingAccess) { client in AccessEditor(client: client) }
         .confirmationDialog(
-            "Revoke access for \(revoking?.clientName ?? "this app")?",
+            "Revoke access for \(revoking?.latest.clientName ?? "this app")?",
             isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
             presenting: revoking
-        ) { client in
-            Button("Revoke", role: .destructive) { model.revoke(client) }
-        } message: { _ in
-            Text("It stops working right away. To use it again, connect it again and approve it here.")
+        ) { app in
+            Button("Revoke", role: .destructive) { model.revoke(app) }
+        } message: { app in
+            Text(app.connections.count > 1
+                ? "All \(app.connections.count) of its connections stop working right away. To use it again, connect it again and approve it here."
+                : "It stops working right away. To use it again, connect it again and approve it here.")
         }
     }
 }
 
 private struct ClientRow: View {
-    let client: PairedClient
+    let app: AppModel.ConnectedApp
     let access: Set<String>?
     let changeAccess: () -> Void
     let revoke: () -> Void
@@ -293,9 +295,12 @@ private struct ClientRow: View {
         }
     }
 
+    private var client: PairedClient { app.latest }
+
     private var details: String {
         let origin = client.clientDomain ?? "Unverified name"
-        return "\(origin) · connected \(client.createdAt.formatted(.relative(presentation: .named)))"
+        let connections = app.connections.count > 1 ? " · \(app.connections.count) connections" : ""
+        return "\(origin) · connected \(client.createdAt.formatted(.relative(presentation: .named)))\(connections)"
     }
 
     private var accessSummary: String {

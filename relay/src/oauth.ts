@@ -117,6 +117,10 @@ async function submitAuthorize(request: Request, env: Env, origin: string): Prom
 		metadata: pairing,
 		scope: approved.request.scope,
 		props: { clientName: pairing.client_name } satisfies GrantProps,
+		// One app can connect several times, e.g. Claude with a connector per server. Clients
+		// that identify by a metadata document share one client ID across all of those, so
+		// replacing earlier grants would silently log the other connectors out.
+		revokeExistingGrants: false,
 	});
 	// KV listings lag new writes, so tell the hub about this grant directly.
 	await hub(env).clientsChanged({

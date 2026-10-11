@@ -55,8 +55,26 @@ final class AppModel {
     private(set) var logs: [LogLine] = []
     /// Apps waiting for the owner to approve them, oldest first.
     private(set) var pendingPairings: [PairingRequest] = []
-    /// Apps that have been granted access through the relay.
+    /// Grants the relay has issued: one per connection, so an app can appear more than once.
     private(set) var clients: [PairedClient] = []
+
+    /// An app with access, and its connections (e.g. one per connector it added).
+    struct ConnectedApp: Identifiable {
+        let connections: [PairedClient]
+        var id: String { latest.clientID }
+        var latest: PairedClient { connections[0] }
+    }
+
+    /// Apps with access, newest first. Grouped by client ID, which is also what access is set by.
+    var apps: [ConnectedApp] {
+        var order: [String] = []
+        var byClient: [String: [PairedClient]] = [:]
+        for client in clients {
+            if byClient[client.clientID] == nil { order.append(client.clientID) }
+            byClient[client.clientID, default: []].append(client)
+        }
+        return order.map { ConnectedApp(connections: byClient[$0]!) }
+    }
     /// Client ID → the servers that app may use. Apps not listed may use all servers.
     private(set) var clientAccess: [String: Set<String>] = [:] {
         didSet {
@@ -436,11 +454,13 @@ final class AppModel {
         Task { await client.decidePairing(request.id, allow: allow) }
     }
 
-    func revoke(_ paired: PairedClient) {
-        log("Revoked \(paired.clientName)")
-        clientAccess[paired.clientID] = nil
+    /// Revokes every connection the app has.
+    func revoke(_ app: ConnectedApp) {
+        log("Revoked \(app.latest.clientName)")
+        clientAccess[app.id] = nil
         guard let client else { return }
-        Task { await client.revokeClient(paired.id) }
+        let grants = app.connections.map(\.id)
+        Task { for grant in grants { await client.revokeClient(grant) } }
     }
 
     /// Asks the relay for the current list of apps.

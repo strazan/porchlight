@@ -5401,7 +5401,11 @@ async function submitAuthorize(request, env, origin) {
     userId: OWNER,
     metadata: pairing,
     scope: approved.request.scope,
-    props: { clientName: pairing.client_name }
+    props: { clientName: pairing.client_name },
+    // One app can connect several times, e.g. Claude with a connector per server. Clients
+    // that identify by a metadata document share one client ID across all of those, so
+    // replacing earlier grants would silently log the other connectors out.
+    revokeExistingGrants: false
   });
   await hub(env).clientsChanged({
     grant_id: grantIdFromRedirect(redirectTo),
@@ -5563,7 +5567,7 @@ var Hub = class extends DurableObject {
    * can take a minute to include it, so it's remembered here until they do.
    */
   async clientsChanged(added) {
-    if (added) await this.ctx.storage.put(`recent:${added.client_id}`, { ...added, recorded: Date.now() });
+    if (added) await this.ctx.storage.put(`recent:${added.grant_id || added.client_id}`, { ...added, recorded: Date.now() });
     const ws = this.host();
     if (ws) await this.sendClients(ws);
   }
@@ -5604,7 +5608,9 @@ var Hub = class extends DurableObject {
       cursor = page2.cursor;
     } while (cursor);
     for (const [key, recent] of await this.ctx.storage.list({ prefix: "recent:" })) {
-      const listed = items.some((item) => item.client_id === recent.client_id);
+      const listed = items.some(
+        (item) => recent.grant_id ? item.grant_id === recent.grant_id : item.client_id === recent.client_id
+      );
       if (listed || revoked.has(recent.grant_id) || now - recent.recorded >= KV_LAG_MS) {
         await this.ctx.storage.delete(key);
       } else {

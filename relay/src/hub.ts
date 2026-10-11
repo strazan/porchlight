@@ -126,7 +126,7 @@ export class Hub extends DurableObject<Env> {
 	 * can take a minute to include it, so it's remembered here until they do.
 	 */
 	async clientsChanged(added?: ClientSummary): Promise<void> {
-		if (added) await this.ctx.storage.put(`recent:${added.client_id}`, { ...added, recorded: Date.now() });
+		if (added) await this.ctx.storage.put(`recent:${added.grant_id || added.client_id}`, { ...added, recorded: Date.now() });
 		const ws = this.host();
 		if (ws) await this.sendClients(ws);
 	}
@@ -172,7 +172,9 @@ export class Hub extends DurableObject<Env> {
 		} while (cursor);
 		// Grants issued moments ago, which KV may not list yet.
 		for (const [key, recent] of await this.ctx.storage.list<ClientSummary & { recorded: number }>({ prefix: "recent:" })) {
-			const listed = items.some((item) => item.client_id === recent.client_id);
+			const listed = items.some((item) =>
+				recent.grant_id ? item.grant_id === recent.grant_id : item.client_id === recent.client_id,
+			);
 			if (listed || revoked.has(recent.grant_id) || now - recent.recorded >= KV_LAG_MS) {
 				await this.ctx.storage.delete(key);
 			} else {

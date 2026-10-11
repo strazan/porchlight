@@ -71,8 +71,7 @@ function base64url(bytes: ArrayBuffer | Uint8Array): string {
 	return toBase64(new Uint8Array(bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** Starts an authorization like an MCP client: DCR, then /authorize with PKCE. */
-async function startAuthorization(clientName = "Test Client") {
+async function register(clientName: string): Promise<string> {
 	const registration = await SELF.fetch(`${ORIGIN}/oauth/register`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
@@ -85,7 +84,12 @@ async function startAuthorization(clientName = "Test Client") {
 		}),
 	});
 	expect(registration.status).toBe(201);
-	const { client_id } = (await registration.json()) as { client_id: string };
+	return ((await registration.json()) as { client_id: string }).client_id;
+}
+
+/** Starts an authorization like an MCP client: DCR (unless reusing a client), then /authorize with PKCE. */
+async function startAuthorization(clientName = "Test Client", existingClient?: string) {
+	const client_id = existingClient ?? (await register(clientName));
 
 	const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
 	const challenge = base64url(await crypto.subtle.digest("SHA-256", enc.encode(verifier)));
@@ -124,8 +128,8 @@ function submit(started: Started, decision: "approve" | "deny") {
 }
 
 /** The whole flow, approved on the (fake) Mac. Returns the client's tokens. */
-async function pair(host: Host, clientName = "Test Client") {
-	const started = await startAuthorization(clientName);
+async function pair(host: Host, clientName = "Test Client", existingClient?: string) {
+	const started = await startAuthorization(clientName, existingClient);
 	const request = await host.pairRequest(started.pairing);
 	host.send({ type: "pair_decision", id: request.id, allow: true });
 	await expect.poll(() => pairingState(started.pairing)).toBe("approved");
@@ -267,6 +271,20 @@ describe("oauth", () => {
 		second.send({ type: "pair_decision", id: resent.id, allow: true });
 		await expect.poll(() => pairingState(started.pairing)).toBe("approved");
 		second.ws.close();
+	});
+
+	it("keeps every connection when the same app connects again", async () => {
+		const host = await connectHost((req, send) => respond(send, req.id, 200, "ok"));
+		const first = await pair(host, "Twice");
+		const second = await pair(host, "Twice", first.client_id);
+		expect(second.client_id).toBe(first.client_id);
+		// Both connections (e.g. two connectors in one app) still work.
+		expect((await mcp(first.access_token)).status).toBe(200);
+		expect((await mcp(second.access_token)).status).toBe(200);
+		host.send({ type: "list_clients" });
+		const listed = await host.next("clients", (f) => f.items.filter((i) => i.client_id === first.client_id).length === 2);
+		expect(new Set(listed.items.filter((i) => i.client_id === first.client_id).map((i) => i.grant_id)).size).toBe(2);
+		host.ws.close();
 	});
 
 	it("lists and revokes paired clients from the host", async () => {
