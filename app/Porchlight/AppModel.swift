@@ -228,6 +228,20 @@ final class AppModel {
     }
 
     /// Adds imported servers, renaming any whose name is taken.
+    /// Imports the chosen candidates, first copying any Claude Desktop extensions' files.
+    func importServers(from candidates: [ImportCandidate]) {
+        importServers(candidates.compactMap { candidate in
+            guard !isPreview else { return candidate.config }
+            do {
+                try ConfigImporter.install(candidate)
+                return candidate.config
+            } catch {
+                log("Could not copy \(candidate.originalName): \(error.localizedDescription)")
+                return nil
+            }
+        })
+    }
+
     func importServers(_ configs: [ServerConfig]) {
         var taken = Set(servers.map(\.name))
         for var config in configs {
@@ -245,7 +259,7 @@ final class AppModel {
         return await Router.probe(config, environment: shellEnvironment ?? ProcessInfo.processInfo.environment)
     }
 
-    /// Servers configured in Claude Desktop, Claude Code and Cursor.
+    /// Servers configured in Claude Desktop (and its extensions), Claude Code and Cursor.
     func importCandidates() -> [ImportCandidate] {
         isPreview ? previewImportCandidates : ConfigImporter.candidates()
     }
@@ -608,7 +622,8 @@ final class AppModel {
         previewImportCandidates = [
             ImportCandidate(source: .claudeDesktop, scope: nil, originalName: "filesystem", config: servers[1], unsupportedReason: nil),
             ImportCandidate(source: .claudeDesktop, scope: nil, originalName: "memory", config: ServerConfig(name: "memory", command: "npx", args: ["-y", "@modelcontextprotocol/server-memory"]), unsupportedReason: nil),
-            ImportCandidate(source: .claudeCode, scope: nil, originalName: "linear", config: nil, unsupportedReason: "Remote server: add it to your AI app directly"),
+            ImportCandidate(source: .claudeExtensions, scope: nil, originalName: "Apple Reminders", config: ServerConfig(name: "apple-reminders", command: "node", args: ["/Users/you/Library/Application Support/Porchlight/Extensions/apple-reminders/server/index.js"]), unsupportedReason: nil, bundle: ExtensionBundle(source: URL(filePath: "/"), destination: URL(filePath: "/"))),
+            ImportCandidate(source: .claudeCode, scope: nil, originalName: "linear", config: nil, unsupportedReason: "Remote server: cloud agents can reach it directly"),
             ImportCandidate(source: .claudeCode, scope: "/Users/you/code/porchlight", originalName: "sqlite", config: ServerConfig(name: "sqlite", command: "uvx", args: ["mcp-server-sqlite", "--db-path", "dev.db"]), unsupportedReason: nil),
             ImportCandidate(source: .cursor, scope: nil, originalName: "obsidian", config: obsidian, unsupportedReason: nil),
         ]

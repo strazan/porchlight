@@ -114,7 +114,7 @@ func httpConfig(_ name: String, url: URL, key: String = "test-key") -> ServerCon
         #expect(byName["obsidian"]?.config?.transport == .http)
         #expect(byName["obsidian"]?.config?.headers == ["Authorization": "Bearer k"])
         #expect(byName["notion"]?.config == nil)
-        #expect(byName["notion"]?.unsupportedReason == "Remote server: add it to your AI app directly")
+        #expect(byName["notion"]?.unsupportedReason == "Remote server: cloud agents can reach it directly")
         #expect(byName["legacy"]?.config == nil)
     }
 

@@ -56,11 +56,6 @@ struct MenuContent: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: model.isConnected ? "lightbulb.max.fill" : "lightbulb")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(model.isConnected ? Color.porchlight : .secondary)
-                .frame(width: 30, height: 30)
-                .background((model.isConnected ? Color.porchlight : .secondary).opacity(0.15), in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 Text("Porchlight").font(.headline)
                 Text(statusLine)
@@ -74,7 +69,7 @@ struct MenuContent: View {
                 .controlSize(.small)
                 .labelsHidden()
                 .disabled(!model.isConfigured)
-                .help(model.isOn ? "Turn off: cloud apps can't reach your servers" : "Turn on")
+                .help(model.isOn ? "Turn off: cloud agents can't reach your servers" : "Turn on")
         }
     }
 
@@ -270,7 +265,7 @@ private struct GettingStarted: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Let cloud apps like Claude and ChatGPT use the MCP servers on this Mac.")
+            Text("Let cloud agents like Claude and ChatGPT use the MCP servers on this Mac.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -427,7 +427,7 @@ private struct RelayTab: View {
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Porchlight needs a relay on the internet that cloud apps can reach. Deploy one to your own Cloudflare account: it takes about a minute and fits in the free plan.")
+                        Text("Porchlight needs a relay on the internet that cloud agents can reach. Deploy one to your own Cloudflare account: it takes about a minute and fits in the free plan.")
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Button("Deploy to Cloudflare…") { deploying = true }

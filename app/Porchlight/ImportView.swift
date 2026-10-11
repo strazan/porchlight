@@ -1,7 +1,7 @@
 import PorchlightCore
 import SwiftUI
 
-/// Picks servers to import from Claude Desktop, Claude Code and Cursor.
+/// Picks servers to import from Claude Desktop (and its extensions), Claude Code and Cursor.
 struct ImportView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -12,7 +12,7 @@ struct ImportView: View {
         VStack(spacing: 0) {
             SheetHeader(
                 title: "Import Servers",
-                subtitle: "Servers you've set up in Claude Desktop, Claude Code and Cursor.",
+                subtitle: "Servers you've set up in Claude Desktop, its extensions, Claude Code and Cursor.",
                 systemImage: "square.and.arrow.down"
             )
             .padding(20)
@@ -41,7 +41,7 @@ struct ImportView: View {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button(selected.isEmpty ? "Import" : "Import \(selected.count)") {
-                    model.importServers(candidates.filter { selected.contains($0.id) }.compactMap(\.config))
+                    model.importServers(from: candidates.filter { selected.contains($0.id) && $0.config != nil })
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -68,7 +68,11 @@ struct ImportView: View {
                         Text(scope).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
                     }
                 }
-                if let config = candidate.config {
+                if candidate.bundle != nil, !alreadyAdded {
+                    Text("Copied into Porchlight, so it keeps working without Claude Desktop")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let config = candidate.config {
                     Text(alreadyAdded ? "Already added" : config.summary)
                         .font(alreadyAdded ? .caption : .caption.monospaced())
                         .foregroundStyle(.secondary)

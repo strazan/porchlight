@@ -9,5 +9,20 @@
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
+    <!-- Servers Porchlight runs ask for these through Porchlight (see Config/Porchlight.entitlements). -->
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>A server you added to Porchlight wants to use your reminders.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>A server you added to Porchlight wants to use your reminders.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>A server you added to Porchlight wants to use your calendars.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>A server you added to Porchlight wants to use your calendars.</string>
+    <key>NSContactsUsageDescription</key>
+    <string>A server you added to Porchlight wants to use your contacts.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>A server you added to Porchlight wants to use your photo library.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>A server you added to Porchlight wants to control another app, like Notes or Things.</string>
 </dict>
 </plist>

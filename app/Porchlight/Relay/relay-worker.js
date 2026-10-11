@@ -5306,7 +5306,7 @@ function landingPage(origin) {
     "Porchlight relay",
     `<div class="bulb">\u{1F4A1}</div>
 <h1>Porchlight relay</h1>
-<p>This relay connects AI apps to the MCP servers on your Mac.</p>
+<p>This relay connects cloud agents to the MCP servers on your Mac.</p>
 <p>Add <code>${escape(origin)}/mcp</code> as a custom connector, then approve the connection on your Mac.</p>`
   );
 }

@@ -1,13 +1,9 @@
-<p align="center">
-  <img src="docs/assets/icon.svg" width="88" height="88" alt="">
-</p>
-
 <h1 align="center">Porchlight</h1>
 
 <p align="center">
-  <strong>Leave the light on for your AI.</strong><br>
-  Use the MCP servers on your Mac from Claude, ChatGPT and any cloud AI app,<br>
-  through a relay you own, with every app and risky tool call approved by you.
+  <strong>Leave the light on for cloud agents.</strong><br>
+  Let Claude, ChatGPT and other cloud agents use the MCP servers on your Mac,<br>
+  through a relay you own, with every agent and risky tool call approved by you.
 </p>
 
 <p align="center">
@@ -31,7 +27,7 @@
 ---
 
 The most useful MCP servers run on your own computer: your notes, your files, your
-repos. But Claude.ai, ChatGPT and other cloud AI apps can only reach servers on the
+repos. But cloud agents like Claude.ai and ChatGPT can only reach servers on the
 public internet. Tunnels like ngrok change URL every run, don't speak MCP's OAuth, and
 hand every tool to anyone who finds the link.
 
@@ -40,17 +36,13 @@ private URL**, through a small relay that runs in **your own Cloudflare account*
 apps sign in with OAuth, you approve each one on your Mac, and anything sensitive asks
 you first.
 
-> [!NOTE]
-> Porchlight is in early development. The first release is coming soon; until then you
-> can [build it from source](#build-from-source).
-
 ## Features
 
 - **One URL for everything.** All your servers behind a single connector, with tools
   named `server__tool`, or one URL per server.
 - **Any local server.** Commands like `npx` and `uvx` servers, and servers already
-  running on your Mac, like Obsidian's. Import what you've set up in Claude Desktop,
-  Claude Code or Cursor in one click.
+  running on your Mac, like Obsidian's. Import what you've set up in Claude Desktop
+  (extensions too), Claude Code or Cursor in one click.
 - **You approve every app.** Connecting shows a code in the browser and the same code on
   your Mac. Nothing gets in until you click Allow.
 - **Tool permissions.** Read-only tools run right away; anything else asks first, showing
@@ -68,7 +60,7 @@ you first.
 
 ```mermaid
 flowchart LR
-    apps["Claude · ChatGPT<br/>(cloud AI apps)"] -- "HTTPS + OAuth 2.1" --> relay["Your relay<br/>(Cloudflare, your account)"]
+    apps["Claude · ChatGPT<br/>(cloud agents)"] -- "HTTPS + OAuth 2.1" --> relay["Your relay<br/>(Cloudflare, your account)"]
     mac["Porchlight<br/>(your Mac)"] -- "outbound WebSocket" --> relay
     mac --> s1["obsidian"]
     mac --> s2["filesystem"]
@@ -85,9 +77,20 @@ The relay is a pipe: it keeps sign-in records, never your files, notes or tool r
 
 ## Getting started
 
+### Install
+
+You need macOS 14 or later.
+
+```sh
+brew install --cask strazan/tap/porchlight
+```
+
+Or [download Porchlight](https://github.com/strazan/porchlight/releases/latest/download/Porchlight.zip),
+unzip it and move it to Applications. More at [porchlight.sh](https://porchlight.sh).
+
 ### Build from source
 
-You need macOS 14 or later and Xcode.
+You need Xcode.
 
 ```sh
 git clone https://github.com/strazan/porchlight

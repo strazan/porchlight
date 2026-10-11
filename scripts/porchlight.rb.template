@@ -4,8 +4,8 @@ cask "porchlight" do
 
   url "https://github.com/strazan/porchlight/releases/download/v#{version}/Porchlight-#{version}.zip"
   name "Porchlight"
-  desc "Use the MCP servers on your Mac from Claude, ChatGPT and other cloud AI apps"
-  homepage "https://github.com/strazan/porchlight"
+  desc "Lets Claude, ChatGPT and other cloud agents use the MCP servers on your Mac"
+  homepage "https://porchlight.sh"
 
   livecheck do
     url :url

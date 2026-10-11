@@ -61,7 +61,9 @@ echo "→ $OUT/porchlight.rb (sha256 $SHA)"
 if [ "$PUBLISH" = "--publish" ]; then
   echo "→ publishing v$VERSION"
   git tag "v$VERSION" && git push origin "v$VERSION"
-  gh release create "v$VERSION" "$ZIP" --title "Porchlight $VERSION" --generate-notes
+  # Also as Porchlight.zip, so the website can link to releases/latest/download/Porchlight.zip.
+  cp "$ZIP" "$OUT/Porchlight.zip"
+  gh release create "v$VERSION" "$ZIP" "$OUT/Porchlight.zip" --title "Porchlight $VERSION" --generate-notes
   TAP=$(mktemp -d)
   git clone -q "$TAP_REPO" "$TAP"
   mkdir -p "$TAP/Casks" && cp "$OUT/porchlight.rb" "$TAP/Casks/porchlight.rb"

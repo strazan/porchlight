@@ -371,10 +371,55 @@ func sseMessages(_ body: String) -> [JSONValue] {
         #expect(github.env == ["TOKEN": "t"])
 
         #expect(found[1].config == nil)
-        #expect(found[1].unsupportedReason == "Remote server: add it to your AI app directly")
+        #expect(found[1].unsupportedReason == "Remote server: cloud agents can reach it directly")
         #expect(found[2].source == .claudeCode)
         #expect(found[2].scope == "/code/app")
         #expect(found[3].source == .cursor)
+    }
+
+    @Test func importsClaudeDesktopExtensions() throws {
+        let home = FileManager.default.temporaryDirectory.appending(path: "porchlight-home-\(UUID())")
+        let claude = "Library/Application Support/Claude"
+        let write = { (path: String, text: String) in
+            let url = home.appending(path: path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(text.utf8).write(to: url)
+        }
+        try write("\(claude)/Claude Extensions/local.mcpb.acme.notes/manifest.json", #"""
+            {"name": "notes-server", "display_name": "Notes",
+             "server": {"type": "node", "mcp_config": {
+               "command": "node", "args": ["${__dirname}/server/index.js", "${user_config.folders}", "--limit=${user_config.limit}"],
+               "env": {"HELPER": "${__dirname}/bin/helper", "ROOT": "${user_config.root}"},
+               "platform_overrides": {"darwin": {"env": {"HELPER": "${__dirname}/bin/helper-mac", "ROOT": "${user_config.root}"}}}}},
+             "user_config": {"root": {"type": "directory", "default": "${HOME}/Documents"},
+                             "limit": {"type": "number", "default": 10},
+                             "folders": {"type": "directory", "multiple": true}}}
+            """#)
+        try write("\(claude)/Claude Extensions/local.mcpb.acme.notes/server/index.js", "// server")
+        try write("\(claude)/Claude Extensions Settings/local.mcpb.acme.notes.json", #"""
+            {"isEnabled": true, "userConfig": {"folders": ["/a", "/b"], "limit": 5}}
+            """#)
+        try write("\(claude)/Claude Extensions/local.mcpb.acme.mail/manifest.json", #"""
+            {"name": "mail", "display_name": "Mail",
+             "server": {"type": "binary", "mcp_config": {"command": "${__dirname}/mail", "env": {"KEY": "${user_config.api_key}"}}},
+             "user_config": {"api_key": {"type": "string", "title": "API Key", "sensitive": true, "required": true}}}
+            """#)
+
+        let found = ConfigImporter.candidates(home: home)
+        #expect(found.map(\.originalName) == ["Mail", "Notes"])
+        #expect(found[0].config == nil)
+        #expect(found[0].unsupportedReason?.contains("API Key") == true)
+
+        let notes = try #require(found[1].config)
+        let copy = home.appending(path: "Library/Application Support/Porchlight/Extensions/local.mcpb.acme.notes").path
+        #expect(found[1].source == .claudeExtensions)
+        #expect(notes.name == "notes-server")
+        #expect(notes.commandLine == ["node", "\(copy)/server/index.js", "/a", "/b", "--limit=5"])
+        #expect(notes.env == ["HELPER": "\(copy)/bin/helper-mac", "ROOT": "\(home.path)/Documents"])
+
+        try ConfigImporter.install(found[1])
+        #expect(FileManager.default.fileExists(atPath: "\(copy)/server/index.js"))
+        try ConfigImporter.install(found[1])  // a second import replaces the copy
     }
 }
 
