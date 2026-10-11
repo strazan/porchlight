@@ -60,14 +60,9 @@ you first.
 
 ## How it works
 
-```mermaid
-flowchart LR
-    apps["Claude · ChatGPT<br/>(cloud agents)"] -- "HTTPS + OAuth 2.1" --> relay["Your relay<br/>(Cloudflare, your account)"]
-    mac["Porchlight<br/>(your Mac)"] -- "outbound WebSocket" --> relay
-    mac --> s1["obsidian"]
-    mac --> s2["filesystem"]
-    mac --> s3["github, …"]
-```
+<p align="center">
+  <img src="docs/assets/how-it-works.png" width="880" alt="Claude and ChatGPT (cloud agents) reach your relay on Cloudflare, in your account, over HTTPS with OAuth 2.1. Porchlight on your Mac keeps an outbound WebSocket to the relay and connects to your MCP servers: obsidian, filesystem, home-assistant and apple-reminders.">
+</p>
 
 1. Your Mac keeps one outbound connection open to your relay.
 2. A cloud app calls the relay's URL. The relay checks its sign-in and passes the request
