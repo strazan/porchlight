@@ -56,7 +56,7 @@ struct ServerIcon: View {
             }
         }
         .task(id: "\(key)|\(model.icons.revision)|\(server.name)|\(server.url)") {
-            await model.icons.load(key: key, defaultWebsite: ServerIconHint.domain(for: server))
+            await model.icons.load(key: key, defaultWebsite: ServerIconHint.domain(for: server), defaultApp: ServerIconHint.macApp(for: server))
         }
     }
 }

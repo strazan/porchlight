@@ -1,14 +1,21 @@
-// The website, porchlight.sh: the static files in docs/, served by Cloudflare.
+// The website, porchlight.sh: the static files in docs/, served by Cloudflare, with
+// www.porchlight.sh redirected to it (worker.js).
 // Deploy with `make site` (needs `npx wrangler login` once, to the account that has the domain).
 {
 	"$schema": "../relay/node_modules/wrangler/config-schema.json",
 	"name": "porchlight-site",
 	"compatibility_date": "2026-10-01",
+	"main": "worker.js",
 	"assets": {
 		"directory": "../docs",
+		"binding": "ASSETS",
+		"run_worker_first": true,
 		"html_handling": "auto-trailing-slash",
 		"not_found_handling": "none"
 	},
-	"routes": [{ "pattern": "porchlight.sh", "custom_domain": true }],
+	"routes": [
+		{ "pattern": "porchlight.sh", "custom_domain": true },
+		{ "pattern": "www.porchlight.sh", "custom_domain": true }
+	],
 	"workers_dev": false
 }

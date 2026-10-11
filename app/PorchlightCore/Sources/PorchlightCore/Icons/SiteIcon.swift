@@ -67,6 +67,16 @@ public enum ServerIconHint {
         ("postgres", "postgresql.org"), ("mongodb", "mongodb.com"), ("redis", "redis.io"),
         ("docker", "docker.com"), ("kubernetes", "kubernetes.io"), ("aws", "aws.amazon.com"),
         ("raycast", "raycast.com"), ("things", "culturedcode.com"), ("bear", "bear.app"),
+        ("home-assistant", "home-assistant.io"), ("homeassistant", "home-assistant.io"),
+    ]
+
+    /// Keyword → the Mac app a server works with, whose own icon is the best picture of it.
+    /// Specific keywords only: "mail" alone would also match Gmail.
+    static let macApps: [(keyword: String, bundleID: String)] = [
+        ("reminders", "com.apple.reminders"), ("apple-calendar", "com.apple.iCal"), ("ical", "com.apple.iCal"),
+        ("apple-notes", "com.apple.Notes"), ("imessage", "com.apple.MobileSMS"), ("apple-messages", "com.apple.MobileSMS"),
+        ("apple-contacts", "com.apple.AddressBook"), ("apple-photos", "com.apple.Photos"), ("apple-mail", "com.apple.mail"),
+        ("apple-music", "com.apple.Music"), ("shortcuts", "com.apple.shortcuts"),
     ]
 
     /// Keyword → SF Symbol, for servers without a website to take an icon from.
@@ -80,6 +90,12 @@ public enum ServerIconHint {
     public static func domain(for config: ServerConfig) -> String? {
         let text = haystack(config)
         return websites.first { text.contains($0.keyword) }?.domain
+    }
+
+    /// The bundle ID of the Mac app the server works with, if it's one we know.
+    public static func macApp(for config: ServerConfig) -> String? {
+        let text = haystack(config)
+        return macApps.first { text.contains($0.keyword) }?.bundleID
     }
 
     public static func symbol(for config: ServerConfig) -> String {

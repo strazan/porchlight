@@ -48,5 +48,10 @@ import Testing
         #expect(ServerIconHint.domain(for: files) == nil)
         #expect(ServerIconHint.symbol(for: files) == "folder")
         #expect(ServerIconHint.symbol(for: ServerConfig(name: "custom", command: "./run.sh")) == "terminal")
+        let home = ServerConfig(name: "home-assistant", url: "http://homeassistant.local:8123/api/mcp")
+        #expect(ServerIconHint.domain(for: home) == "home-assistant.io")
+        let reminders = ServerConfig(name: "tasks", command: "node", args: ["/x/apple-reminders/server/index.js"])
+        #expect(ServerIconHint.macApp(for: reminders) == "com.apple.reminders")
+        #expect(ServerIconHint.macApp(for: ServerConfig(name: "gmail", command: "gmail-mcp")) == nil)
     }
 }

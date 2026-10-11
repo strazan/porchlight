@@ -577,10 +577,15 @@ final class AppModel {
         servers = [
             obsidian,
             ServerConfig(name: "filesystem", command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/you/Documents"]),
-            ServerConfig(name: "github", command: "docker", args: ["run", "-i", "--rm", "ghcr.io/github/github-mcp-server"], env: ["GITHUB_TOKEN": "x"]),
+            ServerConfig(name: "home-assistant", url: "http://homeassistant.local:8123/api/mcp", headers: ["Authorization": "Bearer 0123456789abcdef"]),
+            ServerConfig(
+                name: "apple-reminders", command: "node",
+                args: ["/Users/you/Library/Application Support/Porchlight/Extensions/local.mcpb.high5-ventures-gmbh.apple-reminders/server/index.js"],
+                env: ["REMINDERS_BINARY": "/Users/you/Library/Application Support/Porchlight/Extensions/local.mcpb.high5-ventures-gmbh.apple-reminders/bin/reminders-eventkit"]
+            ),
             ServerConfig(name: "playwright", command: "npx", args: ["@playwright/mcp@latest"], enabled: false),
         ]
-        serverStatus = ["obsidian": .running, "filesystem": .running, "github": .failed("Exited with status 125")]
+        serverStatus = ["obsidian": .running, "filesystem": .running, "home-assistant": .running, "apple-reminders": .running]
 
         let now = Date()
         clients = [
@@ -599,7 +604,8 @@ final class AppModel {
             ActivityEvent(date: now.addingTimeInterval(-500), client: claude, server: "filesystem", method: "tools/call", tool: "read_text_file", duration: .milliseconds(31), outcome: .ok),
             ActivityEvent(date: now.addingTimeInterval(-420), client: claude, server: "filesystem", method: "tools/call", tool: "write_file", duration: .seconds(6), outcome: .denied("The user declined this call to write_file on their Mac.")),
             ActivityEvent(date: now.addingTimeInterval(-300), client: chatgpt, server: "obsidian", method: "tools/call", tool: "get_note", duration: .milliseconds(140), outcome: .ok),
-            ActivityEvent(date: now.addingTimeInterval(-120), client: claude, server: "github", method: "tools/call", tool: "list_issues", duration: .milliseconds(12), outcome: .error("Could not start github: Exited with status 125")),
+            ActivityEvent(date: now.addingTimeInterval(-240), client: claude, server: "apple-reminders", method: "tools/call", tool: "get_today", duration: .milliseconds(48), outcome: .ok),
+            ActivityEvent(date: now.addingTimeInterval(-120), client: claude, server: "home-assistant", method: "tools/call", tool: "GetLiveContext", duration: .seconds(15), outcome: .error("home-assistant didn't answer in time")),
         ]
         for (index, line) in [
             (nil, "Connecting to https://porchlight-relay.you.workers.dev"),
@@ -607,8 +613,8 @@ final class AppModel {
             ("obsidian", "connected to http://127.0.0.1:27123/mcp/"),
             ("filesystem", "started: npx -y @modelcontextprotocol/server-filesystem /Users/you/Documents"),
             ("filesystem", "Secure MCP Filesystem Server running on stdio"),
-            ("github", "started: docker run -i --rm ghcr.io/github/github-mcp-server"),
-            ("github", "docker: Cannot connect to the Docker daemon. Is the docker daemon running?"),
+            ("home-assistant", "connected to http://homeassistant.local:8123/api/mcp"),
+            ("apple-reminders", "started: node …/apple-reminders/server/index.js"),
         ].enumerated() {
             logs.append(LogLine(id: index, date: now.addingTimeInterval(Double(index - 20)), server: line.0, text: line.1))
         }
@@ -632,8 +638,8 @@ final class AppModel {
         case .waitingForToolApproval:
             pendingApprovals = [ToolApprovalRequest(
                 clientID: "https://claude.ai/oauth/mcp-oauth-client-metadata",
-                clientName: "Claude", server: "filesystem", tool: "write_file", title: "Write File",
-                arguments: .object(["path": .string("/Users/you/Documents/notes/todo.md"), "content": .string("- [ ] Ship Porchlight\n- [ ] Write the README")])
+                clientName: "Claude", server: "apple-reminders", tool: "create_reminder", title: "Create reminder",
+                arguments: .object(["list": .string("Groceries"), "title": .string("Oat milk"), "dueDate": .string("2026-10-12T09:00:00")])
             )]
         case .switchedOff:
             state = .off

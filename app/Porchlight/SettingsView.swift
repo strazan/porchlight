@@ -118,7 +118,7 @@ private struct ServersTab: View {
                 }
             }
             if !model.servers.isEmpty {
-                Footnote("Cloud apps see each server's tools as server__tool. Double-click a server to edit it.")
+                Footnote("Cloud agents see each server's tools as server__tool. Double-click a server to edit it.")
             }
         }
         .padding(20)
@@ -528,7 +528,7 @@ private struct GeneralTab: View {
                 }
                 Toggle(isOn: $model.keepAwake) {
                     Text("Keep this Mac awake while Porchlight is on")
-                    Text("Cloud apps can only reach your servers while your Mac is awake. Closing the lid still puts it to sleep.")
+                    Text("Cloud agents can only reach your servers while your Mac is awake. Closing the lid still puts it to sleep.")
                 }
                 Toggle(isOn: Binding(get: { model.icons.fetchFromWebsites }, set: { model.icons.fetchFromWebsites = $0 })) {
                     Text("Show icons from websites")

@@ -15,7 +15,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/menu-waiting-dark.png">
-    <img src="docs/assets/menu-waiting.png" width="330" alt="Porchlight in the menu bar: connected, with three servers and Claude asking to use a tool">
+    <img src="docs/assets/menu-waiting.png" width="330" alt="Porchlight in the menu bar: connected, with four servers and Claude asking to create a reminder">
   </picture>
   &nbsp;
   <picture>

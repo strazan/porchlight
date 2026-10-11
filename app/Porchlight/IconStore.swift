@@ -99,10 +99,16 @@ final class IconStore {
 
     // MARK: Loading
 
-    /// Loads the icon for `key` (called from the icon views as they appear).
-    func load(key: String, defaultWebsite: String?) async {
+    /// Loads the icon for `key` (called from the icon views as they appear). `defaultApp` is
+    /// the bundle ID of an app whose icon to use when it's installed, before any website.
+    func load(key: String, defaultWebsite: String?, defaultApp: String? = nil) async {
         if case .image(let file)? = overrides[key] {
             images[key] = NSImage(contentsOf: Self.customDirectory.appending(path: file))
+            return
+        }
+        if overrides[key] == nil, let defaultApp,
+           let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: defaultApp) {
+            images[key] = NSWorkspace.shared.icon(forFile: app.path)
             return
         }
         guard fetchFromWebsites, !isPreview || Self.previewsMayFetch, let site = website(for: key, default: defaultWebsite) else {

@@ -46,7 +46,7 @@ enum Snapshots {
 
     private static func catalog() -> [Shot] {
         let obsidian = sample(.everything).servers[0]
-        let github = sample(.everything).servers[2]
+        let reminders = sample(.everything).servers[3]
         let chatgpt = sample(.everything).clients[1]
         func shot(_ name: String, _ scenario: AppModel.SampleScenario, _ size: CGSize? = nil, _ view: some View) -> Shot {
             Shot(name: name, scenario: scenario, size: size, view: AnyView(view))
@@ -63,7 +63,7 @@ enum Snapshots {
             shot("settings-relay-first-run", .firstRun, nil, SettingsView(tab: .relay)),
             shot("settings-general", .everything, nil, SettingsView(tab: .general)),
             shot("editor-new", .everything, nil, ServerEditor(server: ServerConfig(name: "", command: ""), isNew: true)),
-            shot("editor-command", .everything, nil, ServerEditor(server: github, isNew: false)),
+            shot("editor-command", .everything, nil, ServerEditor(server: reminders, isNew: false)),
             shot("editor-url", .everything, nil, ServerEditor(server: obsidian, isNew: false)),
             shot("tool-permissions", .everything, nil, ToolPermissionsView(config: obsidian, policy: .constant(obsidian.toolPolicy))),
             shot("import", .everything, nil, ImportView()),
@@ -90,7 +90,7 @@ enum Snapshots {
                 await model.icons.load(key: IconStore.key(app: request.clientID), defaultWebsite: request.clientDomain)
             }
             for server in model.servers {
-                await model.icons.load(key: IconStore.key(server: server), defaultWebsite: ServerIconHint.domain(for: server))
+                await model.icons.load(key: IconStore.key(server: server), defaultWebsite: ServerIconHint.domain(for: server), defaultApp: ServerIconHint.macApp(for: server))
             }
         }
     }
