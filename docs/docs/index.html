@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docs · Porchlight</title>
+<meta name="description" content="How to install and set up Porchlight: deploy your relay, add your MCP servers, connect Claude or ChatGPT, and control what each app can do.">
+<link rel="canonical" href="https://porchlight.sh/docs/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Porchlight">
+<meta property="og:url" content="https://porchlight.sh/docs/">
+<meta property="og:title" content="Docs · Porchlight">
+<meta property="og:description" content="Install Porchlight, deploy your relay, add your servers and connect an app.">
+<meta property="og:image" content="https://porchlight.sh/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#efe5cd">
+<link rel="icon" href="../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-light-32.png" media="(prefers-color-scheme: light)">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-dark-32.png" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="192x192" href="../assets/favicon-light-192.png" media="(prefers-color-scheme: light)">
+<link rel="icon" type="image/png" sizes="192x192" href="../assets/favicon-dark-192.png" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500&family=Courier+Prime&family=Patrick+Hand&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('js')</script>
+<style>
+:root{
+  --paper:#efe5cd;--card:#fbf5e6;--ink:#263174;--sun:#f6a71c;--sun-ink:#b36d0c;--dark:#25200d;
+  --serif:"Young Serif","Iowan Old Style",Georgia,serif;
+  --sans:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --mono:"Courier Prime","Courier New",ui-monospace,monospace;
+  --hand:"Patrick Hand","Comic Sans MS",cursive;
+  --gut:clamp(16px,3vw,40px);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:24px}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 18px/1.62 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-underline-offset:3px;text-decoration-thickness:1px}
+a:hover{color:var(--sun-ink)}
+::selection{background:var(--sun);color:var(--ink)}
+:focus-visible{outline:2px dashed var(--ink);outline-offset:4px}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:100;mix-blend-mode:multiply;opacity:.5;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' seed='4' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .55  0 0 0 0 .5  0 0 0 0 .42  0 0 0 -1.6 1.25'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-size:320px 320px}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:99;mix-blend-mode:multiply;opacity:.16;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='.03 .045' numOctaves='3' seed='9'/><feColorMatrix values='0 0 0 0 .6  0 0 0 0 .52  0 0 0 0 .4  0 0 0 -2.4 1.3'/></filter><rect width='100%' height='100%' filter='url(%23f)'/></svg>");
+  background-size:600px 600px}
+.get{display:flex;flex-direction:column;align-items:flex-start;gap:0}
+.dl{position:relative;z-index:0;display:inline-flex;align-items:center;gap:12px;padding:15px 24px 16px 26px;color:#fbf5e6;font:400 clamp(20px,1.6vw,23px)/1 var(--serif);text-decoration:none;isolation:isolate}
+.dl::before,.dl::after{content:"";position:absolute;inset:0;z-index:-1;clip-path:polygon(1.2% 6%,22% 1%,48% 4%,74% 0,98.6% 5%,100% 48%,98.4% 95%,72% 100%,46% 96%,21% 100%,0.6% 94%,0 52%)}
+.dl::before{background:var(--ink)}
+.dl::after{z-index:-2;background:var(--sun);transform:translate(5px,4px);transition:transform .25s cubic-bezier(.3,1.4,.5,1)}
+.dl:hover::after{transform:translate(8px,6px)}
+.dl:active::after{transform:translate(2px,2px)}
+.dl svg{width:17px;height:21px;flex:none;transition:transform .3s cubic-bezier(.3,1.4,.5,1)}
+.dl:hover svg{transform:translateY(2px)}
+.req{font-size:14.5px!important;line-height:1.4!important;margin:16px 0 18px!important;max-width:none!important}
+.req a{text-underline-offset:3px;text-decoration-thickness:1px}
+.brew{display:flex;align-items:stretch;max-width:100%;background:#fbf5e6;transform:rotate(-.5deg);box-shadow:0 1px 0 rgba(38,49,116,.18),0 8px 16px -12px rgba(37,32,13,.55);
+  -webkit-mask:radial-gradient(circle 3px at 0 50%,transparent 98%,#000) left/100% 100%;mask:radial-gradient(circle 3px at 0 50%,transparent 98%,#000) left/100% 100%}
+.brew code{font:400 12.8px/1.45 var(--mono);padding:10px 12px 10px 14px;white-space:normal;user-select:all;-webkit-user-select:all;min-width:0}
+.cp{display:none;flex:none;appearance:none;border:0;border-left:1.5px dashed rgba(38,49,116,.45);background:none;color:var(--ink);font:400 17px/1 var(--hand);padding:0 11px;cursor:pointer}
+html.js .cp{display:block}
+.cp:hover{color:#c7801a}
+.cp.done{color:#c7801a}
+.brew{margin:6px 0 18px;width:fit-content}
+.brew code{font-size:14.5px;white-space:normal;overflow-wrap:anywhere}
+.get{margin:4px 0 6px}
+
+/* header */
+.top{max-width:1180px;margin:0 auto;padding:22px var(--gut) 0;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.home{display:flex;align-items:center;gap:10px;font:400 24px/1 var(--serif);text-decoration:none}
+.home img{width:34px;height:34px;margin-top:-4px}
+.home .sec{font:400 20px/1 var(--hand);color:var(--sun-ink);margin-left:4px;transform:rotate(-3deg) translateY(2px)}
+.top nav{display:flex;gap:20px;font-size:16px}
+
+/* layout */
+.wrap{max-width:1180px;margin:0 auto;padding:0 var(--gut);display:grid;grid-template-columns:200px minmax(0,680px);gap:72px;justify-content:center}
+.toc{position:sticky;top:28px;align-self:start;margin-top:150px;font-size:15.5px}
+.toc p{font:400 19px/1 var(--hand);margin:0 0 12px;color:var(--sun-ink)}
+.toc ol{list-style:none;margin:0;padding:0 0 0 14px;border-left:1.5px solid rgba(38,49,116,.25)}
+.toc li{margin:0 0 9px}
+.toc a{text-decoration:none;display:block;position:relative;line-height:1.35}
+.toc a.on{font-weight:500}
+.toc a.on::before{content:"";position:absolute;left:-19px;top:.42em;width:8px;height:8px;border-radius:50%;background:var(--sun);box-shadow:0 0 0 2px var(--paper)}
+main{min-width:0;padding-bottom:20px}
+.intro{padding:58px 0 10px}
+h1{font:400 clamp(44px,6vw,68px)/1 var(--serif);letter-spacing:-.015em;margin:0 0 18px}
+.intro p{font-size:20px;margin:0;max-width:30em}
+section{padding-top:8px}
+h2{font:400 clamp(32px,3.6vw,40px)/1.1 var(--serif);letter-spacing:-.01em;margin:40px 0 16px;padding-top:28px;border-top:1.5px solid var(--ink)}
+h3{font:400 24px/1.25 var(--serif);margin:38px 0 10px;display:flex;align-items:baseline;gap:12px}
+h3 .n{flex:none;display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--ink);color:var(--card);font:400 18px/1 var(--serif);transform:translateY(-3px);box-shadow:3px 2px 0 var(--sun)}
+p{margin:0 0 16px}
+ul{padding-left:1.2em;margin:0 0 16px}
+li{margin:0 0 8px}
+code{font-family:var(--mono);font-size:.9em;background:var(--card);padding:1px 5px;border-radius:2px;overflow-wrap:anywhere}
+.brew code{background:none;padding:10px 12px 10px 14px;border-radius:0;overflow-wrap:normal}
+.ui{font-family:var(--mono);font-size:.9em;white-space:normal}
+.note{font-size:15.5px}
+dl{margin:0 0 18px}
+dt{font:400 20px/1.3 var(--serif);margin:18px 0 4px}
+dd{margin:0}
+figure{margin:18px 0 26px}
+figure img{display:block;max-width:100%;height:auto;margin:0 auto;position:relative;z-index:101} /* above the paper grain: screenshots stay clean */
+figcaption{font:400 18px/1.3 var(--hand);text-align:center;margin-top:4px;color:#4a518a}
+.colophon{max-width:1180px;margin:90px auto 0;padding:22px var(--gut) 34px;font-size:14.5px;line-height:1.5;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 30px;border-top:1.5px solid var(--ink)}
+.colophon a{text-underline-offset:3px}
+@media (max-width:1000px){
+  .wrap{grid-template-columns:minmax(0,680px)}
+  .toc{display:none}
+}
+@media (max-width:600px){
+  body{font-size:17px}
+  .top nav{gap:14px;font-size:15px}
+  .home{font-size:21px}.home img{width:30px;height:30px}
+  .intro{padding-top:40px}
+  .intro p{font-size:18px}
+  .brew code{font-size:12.5px}
+  .dl{padding:12px 18px 13px 20px;font-size:19px}
+  h3{font-size:21px}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="home" href="../"><img src="../assets/favicon-light-192.png" width="34" height="34" alt="">Porchlight<span class="sec">docs</span></a>
+  <nav><a href="../">Home</a><a href="https://github.com/strazan/porchlight">GitHub</a></nav>
+</header>
+<div class="wrap">
+  <aside class="toc" aria-label="On this page"><p>on this page</p><ol><li><a href="#install">Install</a></li><li><a href="#set-up">Set up</a></li><li><a href="#permissions">Permissions</a></li><li><a href="#asleep">While your Mac is asleep</a></li><li><a href="#security">Security</a></li><li><a href="#developers">For developers</a></li></ol></aside>
+  <main>
+    <div class="intro">
+      <h1>Docs</h1>
+      <p>Porchlight lets cloud agents like Claude and ChatGPT use the MCP servers on your Mac, through a relay in your own Cloudflare account. Here’s how to set it up.</p>
+    </div>
+
+<section id="install">
+  <h2>Install</h2>
+  <p>With Homebrew:</p>
+  <div class="brew"><code>brew install --cask strazan/tap/porchlight</code><button class="cp" type="button" data-copy="brew install --cask strazan/tap/porchlight" aria-label="Copy the command">copy</button></div>
+  <p>Or download it, unzip, and move <span class="ui">Porchlight</span> to your Applications folder.</p>
+  <div class="get"><a class="dl" href="https://github.com/strazan/porchlight/releases/latest/download/Porchlight.zip"><span>Download for Mac</span><svg viewBox="0 0 18 22" aria-hidden="true"><path d="M9 2 C 8.6 7 9.3 11 9 17 M3.5 12.5 C 6 14.6 7.6 16.2 9 18.6 C 10.6 16 12.2 14.4 14.6 12.4 M2.5 20.5 C 7 20 11 20.8 15.5 20.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div>
+  <p class="note">Porchlight needs macOS 14 or later.</p>
+  <h3>Build from source</h3>
+  <p>You’ll need Xcode.</p>
+  <div class="brew"><code>git clone https://github.com/strazan/porchlight &amp;&amp; cd porchlight &amp;&amp; make app</code><button class="cp" type="button" data-copy="git clone https://github.com/strazan/porchlight &amp;&amp; cd porchlight &amp;&amp; make app" aria-label="Copy the command">copy</button></div>
+</section>
+
+<section id="set-up">
+  <h2>Set up</h2>
+  <p>Three steps: put up your relay, add your servers, and let an app in.</p>
+
+  <h3 id="relay"><span class="n">1</span>Deploy your relay</h3>
+  <p>Click the lightbulb in the menu bar and choose <span class="ui">Set Up Porchlight…</span></p>
+  <figure><img src="../assets/docs/menu-first-run.png" width="366" height="370" alt="The Porchlight menu before setup, with a Set Up Porchlight button." loading="lazy" decoding="async"><figcaption>The menu, before setup.</figcaption></figure>
+  <p>In <span class="ui">Settings → Relay</span>, click <span class="ui">Deploy to Cloudflare…</span> You’ll need a free Cloudflare account.</p>
+  <figure><img src="../assets/docs/settings-relay-first-run.png" width="688" height="580" alt="Porchlight Settings, Relay tab, with a Deploy to Cloudflare button." loading="lazy" decoding="async"><figcaption>Settings → Relay.</figcaption></figure>
+  <p>Porchlight opens a Cloudflare page for a new API token with the permissions already filled in (Workers and Workers KV). Create the token and paste it back into Porchlight.</p>
+  <figure><img src="../assets/docs/deploy-token.png" width="566" height="466" alt="Porchlight asking for the Cloudflare API token." loading="lazy" decoding="async"><figcaption>Paste the token.</figcaption></figure>
+  <p>Porchlight deploys the relay to your own Cloudflare account, on the free plan, at a workers.dev address. No domain needed.</p>
+  <figure><img src="../assets/docs/deploy-done.png" width="566" height="466" alt="Porchlight showing the relay deployed, with its address." loading="lazy" decoding="async"><figcaption>Your relay is up.</figcaption></figure>
+
+  <h3 id="servers"><span class="n">2</span>Add your servers</h3>
+  <p>In <span class="ui">Settings → Servers</span>, <span class="ui">Import…</span> brings in the servers you already use in Claude Desktop (including its extensions), Claude Code and Cursor.</p>
+  <figure><img src="../assets/docs/import.png" width="606" height="526" alt="The import sheet listing servers found in Claude Desktop, Claude Code and Cursor." loading="lazy" decoding="async"><figcaption>Import from the apps you already use.</figcaption></figure>
+  <p>Or click <span class="ui">+</span> to add one yourself: a command (like <code>npx …</code>) or a local URL, such as the one Obsidian’s plugin serves. HTTP servers can take an API key or headers here too.</p>
+  <figure><img src="../assets/docs/editor-url.png" width="606" height="666" alt="The server editor with a local URL and an API key field." loading="lazy" decoding="async"><figcaption>Adding a server by URL.</figcaption></figure>
+
+  <h3 id="connect"><span class="n">3</span>Connect an app</h3>
+  <p>Copy the connector URL from the menu.</p>
+  <figure><img src="../assets/docs/menu.png" width="366" height="408" alt="The Porchlight menu showing the connector URL and running servers." loading="lazy" decoding="async"><figcaption>The connector URL is in the menu.</figcaption></figure>
+  <p>Add it as a custom connector in the app. In Claude: <span class="ui">Settings → Connectors → Add custom connector</span>. The browser shows a six-digit code and your Mac shows the same one. Allow it when they match.</p>
+  <figure><img src="../assets/docs/prompt-pairing.png" width="486" height="352" alt="Porchlight asking: Connect ChatGPT? with the code 482 913 and Allow and Deny buttons." loading="lazy" decoding="async"><figcaption>Same code on both sides? Allow.</figcaption></figure>
+  <p>One URL, ending in <code>/mcp</code>, has all your servers, with tools named <code>server__tool</code>. Each server also has its own URL, <code>/mcp/&lt;name&gt;</code>, if you’d rather add them separately.</p>
+</section>
+
+<section id="permissions">
+  <h2>Permissions</h2>
+  <p>Read-only tools run right away. Anything that can change things asks first and shows what the app wants to do: allow it once, always, or deny it.</p>
+  <figure><img src="../assets/docs/prompt-approval.png" width="486" height="328" alt="Porchlight asking whether Claude may use Write File, with the file path and contents, and Deny, Always Allow and Allow Once buttons." loading="lazy" decoding="async"><figcaption>A tool that changes things asks first.</figcaption></figure>
+  <p>Set each tool to <span class="ui">Allow</span>, <span class="ui">Ask</span> or <span class="ui">Block</span> under a server’s <span class="ui">ⓘ</span>. Blocked tools are hidden from apps entirely.</p>
+  <figure><img src="../assets/docs/tool-permissions.png" width="626" height="546" alt="The tool list for a server with Allow, Ask and Block for each tool." loading="lazy" decoding="async"><figcaption>Per tool: Allow, Ask or Block.</figcaption></figure>
+  <p>Give an app only some of your servers, and revoke any app at any time in <span class="ui">Settings → Apps</span>.</p>
+  <figure><img src="../assets/docs/access.png" width="426" height="314" alt="Choosing which servers an app can use." loading="lazy" decoding="async"><figcaption>Per app: choose its servers.</figcaption></figure>
+  <p><span class="ui">Activity</span> shows every request with its app, tool, server, time and result.</p>
+  <figure><img src="../assets/docs/activity.png" width="888" height="480" alt="The activity list with app, tool, server, duration and result for each request." loading="lazy" decoding="async"><figcaption>Every request, in Activity.</figcaption></figure>
+</section>
+
+<section id="asleep">
+  <h2>While your Mac is asleep</h2>
+  <p>Porchlight needs your Mac awake to answer. It can keep it from idle-sleeping while it’s on, in <span class="ui">Settings → General</span>. Closing the lid still puts it to sleep.</p>
+  <figure><img src="../assets/docs/settings-general.png" width="688" height="580" alt="Porchlight Settings, General tab, with the option to prevent idle sleep." loading="lazy" decoding="async"><figcaption>Settings → General.</figcaption></figure>
+  <p>While your Mac is offline, apps still see your tools. Calls to tools that only add something, like creating a reminder, are saved by the relay, encrypted to a key only your Mac has, for up to 7 days. They run when your Mac is back, asking first if the tool is set to Ask.</p>
+  <p>Reads, edits and deletes get a clear “your Mac is offline” answer instead. You can change this per tool with <span class="ui">Queue when offline</span> in the tool settings. It’s on by default for tools that only add.</p>
+</section>
+
+<section id="security">
+  <h2>Security</h2>
+  <dl>
+    <dt>Apps sign in properly</dt>
+    <dd>OAuth 2.1 with PKCE, short-lived tokens, dynamic client registration and client metadata documents. Every new app needs your approval on your Mac, with matching codes.</dd>
+    <dt>Nothing connects in</dt>
+    <dd>Your Mac makes one outbound connection to your relay. Nothing on your network listens to the internet.</dd>
+    <dt>Your infrastructure</dt>
+    <dd>The relay runs in your Cloudflare account, with no Porchlight service in between. It keeps sign-in records, never your files, notes or tool results. Queued requests are encrypted to your Mac’s key.</dd>
+  </dl>
+  <p>Found a security issue? Please <a href="https://github.com/strazan/porchlight/security/advisories/new">report it privately</a>.</p>
+</section>
+
+<section id="developers">
+  <h2>For developers</h2>
+  <ul>
+    <li><a href="https://github.com/strazan/porchlight/blob/main/protocol/PROTOCOL.md">The protocol</a> between the relay and the Mac.</li>
+    <li>Running it all locally, and <code>porchlight-cli</code>: see <a href="https://github.com/strazan/porchlight/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>.</li>
+    <li>Porchlight is <a href="https://github.com/strazan/porchlight/blob/main/LICENSE">MIT licensed</a>.</li>
+  </ul>
+</section>
+
+  </main>
+</div>
+<footer class="colophon">
+  <span>Porchlight · MIT licensed · <a href="../">Home</a> · <a href="https://github.com/strazan/porchlight">GitHub</a></span>
+  <span>Not affiliated with Anthropic, OpenAI or Cloudflare.</span>
+</footer>
+<script>
+(() => {
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.cp'); if (!b) return;
+    const done = ok => { b.textContent = ok ? 'copied' : 'select it'; b.classList.toggle('done', ok); clearTimeout(b._t); b._t = setTimeout(() => { b.textContent = 'copy'; b.classList.remove('done'); }, 1600); };
+    const fallback = () => { const c = b.parentNode.querySelector('code'), r = document.createRange(); r.selectNodeContents(c); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); let ok = false; try { ok = document.execCommand('copy'); } catch (_) {} done(ok); };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(b.dataset.copy.replace(/&amp;/g, '&')).then(() => done(true), fallback); else fallback();
+  });
+  // highlight the section you're reading in the table of contents
+  const links = [...document.querySelectorAll('.toc a')];
+  if (!links.length) return;
+  const secs = links.map(a => document.getElementById(a.getAttribute('href').slice(1)));
+  let ticking = false;
+  const mark = () => {
+    ticking = false;
+    let k = 0;
+    secs.forEach((sec, i) => { if (sec && sec.getBoundingClientRect().top < innerHeight * .3) k = i; });
+    if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) k = secs.length - 1;
+    links.forEach((a, i) => a.classList.toggle('on', i === k));
+  };
+  addEventListener('scroll', () => { if (!ticking) { ticking = true; setTimeout(mark, 60); } }, { passive: true });
+  mark();
+})();
+</script>
+</body>
+</html>

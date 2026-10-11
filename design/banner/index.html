@@ -1,0 +1,206 @@
+<!doctype html>
+<!--
+  README banner for Porchlight. A static print, generated from the landing page's closing artwork.
+  Render (2x, transparent outside the torn edge):
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars \
+      --force-device-scale-factor=2 --default-background-color=00000000 --window-size=880,280 \
+      --virtual-time-budget=5000 --screenshot=banner-raw.png "file://$PWD/design/banner/index.html"
+  then reduce it to a palette PNG (~200 colours, keeping alpha) and save as docs/assets/banner.png.
+-->
+<html lang="en"><head><meta charset="utf-8">
+<title>Porchlight · README banner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Young+Serif&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;background:transparent}
+body{width:880px;height:280px;overflow:hidden}
+:root{--deckle:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 1000' preserveAspectRatio='none'><filter id='r' x='-5%' y='-5%' width='110%' height='110%'><feTurbulence type='fractalNoise' baseFrequency='.05' numOctaves='2' seed='3'/><feDisplacementMap in='SourceGraphic' scale='5' xChannelSelector='R' yChannelSelector='G'/></filter><rect x='3' y='3' width='994' height='994' filter='url(%23r)'/></svg>")}
+.plate{position:relative;width:880px;height:280px;background:#efe5cd;-webkit-mask:var(--deckle) 0 0/100% 100% no-repeat;mask:var(--deckle) 0 0/100% 100% no-repeat}
+.plate svg.layer{position:absolute;inset:0;width:100%;height:100%}
+.speckle{position:absolute;inset:0;pointer-events:none;z-index:6;opacity:.9;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260'><filter id='s'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='1' seed='12' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .94  0 0 0 0 .9  0 0 0 0 .8  14 0 0 0 -9.4'/></filter><rect width='100%' height='100%' filter='url(%23s)'/></svg>");
+  background-size:260px 260px}
+.speckle{background-size:130px 130px;opacity:.55}
+.grain{position:absolute;inset:0;mix-blend-mode:multiply;opacity:.28;pointer-events:none;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' seed='4' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .55  0 0 0 0 .5  0 0 0 0 .42  0 0 0 -1.6 1.25'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");background-size:160px 160px}
+.words{position:absolute;left:452px;top:50px;color:#efe5cd;font-family:"Young Serif",Georgia,serif;z-index:3}
+.mark{display:flex;align-items:center;gap:12px;font-size:46px;line-height:1;letter-spacing:-.01em}
+.tag{margin:18px 0 0;font-size:25px;line-height:1.18;letter-spacing:-.005em}
+.tag .lit{color:#f6a71c}
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <pattern id="kd1" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><circle cx="4.5" cy="4.5" r="3.8" fill="#000"/></pattern>
+    <pattern id="kd2" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><circle cx="4.5" cy="4.5" r="2.8" fill="#000"/></pattern>
+    <pattern id="kd3" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><circle cx="4.5" cy="4.5" r="1.9" fill="#000"/></pattern>
+    <pattern id="kd4" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><circle cx="4.5" cy="4.5" r="1" fill="#000"/></pattern>
+    <pattern id="ad1" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><circle cx="4.5" cy="4.5" r="3.8" fill="#f6a71c"/></pattern>
+    <pattern id="ad2" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><circle cx="4.5" cy="4.5" r="2.8" fill="#f6a71c"/></pattern>
+    <pattern id="ad3" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><circle cx="4.5" cy="4.5" r="1.9" fill="#f6a71c"/></pattern>
+    <pattern id="ad4" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><circle cx="4.5" cy="4.5" r="1" fill="#f6a71c"/></pattern>
+    <pattern id="an1" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(15)"><circle cx="3.5" cy="3.5" r="2.7" fill="#f6a71c"/></pattern>
+    <pattern id="an2" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(15)"><circle cx="3.5" cy="3.5" r="1.6" fill="#f6a71c"/></pattern>
+</defs></svg>
+<div class="plate" role="img" aria-label="Porchlight. Leave the light on for cloud agents. A two-ink print of a porch lantern glowing by the front door at night, moths circling it.">
+    <svg class="layer" id="art" viewBox="0 0 2400 800" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <mask id="eB" maskUnits="userSpaceOnUse" x="-20" y="-20" width="2440" height="840">
+          <rect x="-20" y="-20" width="2440" height="840" fill="#fff"/>
+          <g data-rings="620 476 440 345 262 188 116 1 k"></g>
+          <g fill="#000"><path d="M514.4 283.0 L473.4 214.3 L477.8 208.5 L485.0 208.1 L519.1 280.5Z"/><path d="M720.9 280.5 L757.8 198.3 L767.0 199.5 L773.1 206.5 L725.6 283.0Z"/><path d="M809.2 363.7 L925.5 285.5 L934.9 294.2 L937.7 306.7 L811.8 368.3Z"/><path d="M839.1 496.4 L948.9 503.3 L951.5 510.8 L947.4 517.7 L838.5 501.6Z"/><path d="M795.0 609.4 L909.8 689.6 L906.5 699.9 L897.4 705.5 L791.7 613.5Z"/><path d="M683.2 686.7 L712.4 761.4 L703.5 767.3 L692.8 767.0 L678.1 688.2Z"/><path d="M554.5 686.0 L525.0 792.0 L517.0 793.0 L511.1 787.5 L549.5 684.4Z"/><path d="M448.3 613.5 L388.9 667.2 L381.2 662.5 L378.5 654.0 L445.0 609.4Z"/><circle cx="2175" cy="363" r="2.3"/><circle cx="1555" cy="36" r="1.7"/><circle cx="2187" cy="460" r="2.1"/><circle cx="1566" cy="20" r="2.5"/><circle cx="1754" cy="96" r="1.6"/><circle cx="1448" cy="49" r="1.7"/><circle cx="1139" cy="145" r="2.7"/><circle cx="1933" cy="32" r="3.2"/><path d="M2168 278.536837043996 Q2169.7355795547205 291.26442044527954 2178.847372217003 293 Q2169.7355795547205 294.73557955472046 2168 307.463162956004 Q2166.2644204452795 294.73557955472046 2157.152627782997 293 Q2166.2644204452795 291.26442044527954 2168 278.536837043996Z"/><circle cx="1997" cy="109" r="1.8"/><circle cx="1572" cy="55" r="2.6"/><circle cx="1114" cy="416" r="2.5"/><circle cx="1433" cy="43" r="2.9"/><circle cx="1126" cy="38" r="2.8"/><path d="M1454 89.31432961972875 Q1455.2822804456325 98.71771955436745 1462.0142527852033 100 Q1455.2822804456325 101.28228044563255 1454 110.68567038027125 Q1452.7177195543675 101.28228044563255 1445.9857472147967 100 Q1452.7177195543675 98.71771955436745 1454 89.31432961972875Z"/><circle cx="1854" cy="70" r="3.3"/><path d="M2010 97.1108747485828 Q2011.54669503017 108.45330496982994 2019.6668439385628 110 Q2011.54669503017 111.54669503017006 2010 122.8891252514172 Q2008.45330496983 111.54669503017006 2000.3331560614372 110 Q2008.45330496983 108.45330496982994 2010 97.1108747485828Z"/><circle cx="1142" cy="21" r="2.4"/><circle cx="1496" cy="69" r="2.2"/><circle cx="2185" cy="20" r="3.1"/><circle cx="1172" cy="53" r="2.1"/><circle cx="2308" cy="118" r="2.5"/><path d="M2149 302.47440561329404 Q2150.9830713264046 317.0169286735953 2161.3941957900292 319 Q2150.9830713264046 320.9830713264047 2149 335.52559438670596 Q2147.0169286735954 320.9830713264047 2136.6058042099708 319 Q2147.0169286735954 317.0169286735953 2149 302.47440561329404Z"/><circle cx="1173" cy="495" r="2.4"/><circle cx="1615" cy="81" r="2.0"/><circle cx="2270" cy="245" r="3.2"/><circle cx="2385" cy="219" r="1.9"/><circle cx="1543" cy="39" r="3.3"/><circle cx="1138" cy="28" r="3.2"/><path d="M2296 416.22207102483804 Q2298.0133514770196 430.98664852298054 2308.5834467313716 433 Q2298.0133514770196 435.01335147701946 2296 449.77792897516196 Q2293.9866485229804 435.01335147701946 2283.4165532686284 433 Q2293.9866485229804 430.98664852298054 2296 416.22207102483804Z"/><circle cx="1428" cy="56" r="2.5"/></g>
+          <path d="M900 104 Q905.52 144.48 934.5 150 Q905.52 155.52 900 196 Q894.48 155.52 865.5 150 Q894.48 144.48 900 104Z" fill="#000"/><circle cx="955" cy="262" r="15" fill="#000"/>
+          <circle cx="2160" cy="150" r="52" fill="#000"/><circle cx="2182" cy="132" r="46" fill="#fff"/>
+          <!-- door casing -->
+          <g fill="#000"><rect x="322" y="0" width="5" height="800"/><rect x="120" y="0" width="4" height="800"/><rect x="150" y="90" width="4" height="710"/><rect x="150" y="90" width="148" height="4"/><rect x="294" y="90" width="4" height="710"/><rect x="180" y="150" width="88" height="4"/><rect x="180" y="150" width="4" height="230"/><rect x="264" y="150" width="4" height="230"/><rect x="180" y="376" width="88" height="4"/></g>
+          <g fill="#fff"><path data-rough="482.2 365.0 757.8 365.0 737.0 614.6 505.6 614.6"/><path data-rough="417.2 357.2 553.7 222.0 686.3 222.0 826.7 357.2"/><path data-rough="409.4 349.4 834.5 349.4 834.5 372.8 409.4 372.8"/><path data-rough="492.6 604.2 750.0 604.2 750.0 651.0 492.6 651.0"/><path data-rough="599.2 190.8 640.8 190.8 640.8 224.6 599.2 224.6"/><circle cx="620.0" cy="146.6" r="54.6"/></g>
+          <g fill="none" stroke="#fff" stroke-linecap="round"><path d="M418 84 C 500 80 560 86 620 84 M620 84 C 624 90 624 94 620 92" stroke-width="13"/><path d="M418 176 C 430 120 470 92 532 86" stroke-width="8"/></g>
+          <rect x="402" y="56" width="22" height="134" rx="3" fill="#fff"/>
+          <rect x="1060" y="0" width="30" height="800" fill="#fff"/>
+          <g fill="#000"><path data-rough="503.0 380.6 608.3 380.6 608.3 599.0 522.5 599.0"/><path data-rough="635.6 380.6 737.0 380.6 718.8 599.0 635.6 599.0"/><circle cx="620.0" cy="146.6" r="23.4"/></g>
+        </mask>
+        <mask id="eSky" maskUnits="userSpaceOnUse" x="-20" y="-20" width="2440" height="840">
+          <rect x="-20" y="-20" width="2440" height="840" fill="#fff"/>
+          <g fill="#000"><rect x="0" y="0" width="340" height="800"/><path data-rough="482.2 365.0 757.8 365.0 737.0 614.6 505.6 614.6"/><path data-rough="417.2 357.2 553.7 222.0 686.3 222.0 826.7 357.2"/><path data-rough="409.4 349.4 834.5 349.4 834.5 372.8 409.4 372.8"/><path data-rough="492.6 604.2 750.0 604.2 750.0 651.0 492.6 651.0"/><path data-rough="599.2 190.8 640.8 190.8 640.8 224.6 599.2 224.6"/><circle cx="620.0" cy="146.6" r="54.6"/><rect x="402" y="56" width="22" height="134"/><rect x="1060" y="0" width="30" height="800"/><circle cx="620.0" cy="146.6" r="23.4"/></g>
+        </mask>
+        <mask id="eA" maskUnits="userSpaceOnUse" x="-20" y="-20" width="2440" height="840">
+          <rect x="-20" y="-20" width="2440" height="840" fill="#fff"/>
+          <!-- the night past the corner of the house: blue sky, inked fence and garden -->
+          <rect x="1060" y="-20" width="1380" height="840" fill="#000"/>
+          <g fill="#fff"><path d="M1110 712 V638 L1117 626 L1124 638 V712 Z M1140 712 V641 L1147 629 L1154 641 V712 Z M1170 712 V636 L1177 624 L1184 636 V712 Z M1200 712 V640 L1207 628 L1214 640 V712 Z M1230 712 V635 L1237 623 L1244 635 V712 Z M1260 712 V637 L1267 625 L1274 637 V712 Z M1290 712 V639 L1297 627 L1304 639 V712 Z M1320 712 V640 L1327 628 L1334 640 V712 Z M1350 712 V639 L1357 627 L1364 639 V712 Z M1380 712 V637 L1387 625 L1394 637 V712 Z M1410 712 V637 L1417 625 L1424 637 V712 Z M1440 712 V640 L1447 628 L1454 640 V712 Z M1470 712 V641 L1477 629 L1484 641 V712 Z M1500 712 V638 L1507 626 L1514 638 V712 Z M1530 712 V638 L1537 626 L1544 638 V712 Z M1560 712 V639 L1567 627 L1574 639 V712 Z M1590 712 V640 L1597 628 L1604 640 V712 Z M1620 712 V637 L1627 625 L1634 637 V712 Z M1650 712 V641 L1657 629 L1664 641 V712 Z M1680 712 V639 L1687 627 L1694 639 V712 Z M1710 712 V638 L1717 626 L1724 638 V712 Z M1740 712 V635 L1747 623 L1754 635 V712 Z M1770 712 V637 L1777 625 L1784 637 V712 Z M1800 712 V636 L1807 624 L1814 636 V712 Z M1830 712 V638 L1837 626 L1844 638 V712 Z M1860 712 V640 L1867 628 L1874 640 V712 Z M1890 712 V640 L1897 628 L1904 640 V712 Z M1920 712 V635 L1927 623 L1934 635 V712 Z M1950 712 V637 L1957 625 L1964 637 V712 Z M1980 712 V639 L1987 627 L1994 639 V712 Z M2010 712 V641 L2017 629 L2024 641 V712 Z M2040 712 V638 L2047 626 L2054 638 V712 Z M2070 712 V637 L2077 625 L2084 637 V712 Z M2100 712 V638 L2107 626 L2114 638 V712 Z M2130 712 V639 L2137 627 L2144 639 V712 Z M2160 712 V637 L2167 625 L2174 637 V712 Z M2190 712 V635 L2197 623 L2204 635 V712 Z M2220 712 V640 L2227 628 L2234 640 V712 Z M2250 712 V641 L2257 629 L2264 641 V712 Z M2280 712 V639 L2287 627 L2294 639 V712 Z M2310 712 V638 L2317 626 L2324 638 V712 Z M2340 712 V637 L2347 625 L2354 637 V712 Z M2370 712 V640 L2377 628 L2384 640 V712 Z"/><rect x="1100" y="640" width="1300" height="7"/><rect x="1100" y="682" width="1300" height="7"/><circle cx="1300" cy="700" r="60"/><circle cx="1360" cy="680" r="52"/><circle cx="1420" cy="705" r="46"/><circle cx="1820" cy="700" r="52"/><circle cx="1880" cy="676" r="64"/><circle cx="1950" cy="700" r="48"/><circle cx="2010" cy="712" r="40"/><rect x="1060" y="726" width="1380" height="100"/></g>
+          <g fill="#000"><rect x="344" y="23.3" width="105" height="3.2"/><rect x="462" y="24.1" width="70" height="3.2"/><rect x="542" y="24.0" width="68" height="3.2"/><rect x="616" y="23.1" width="121" height="3.2"/><rect x="744" y="24.7" width="119" height="3.2"/><rect x="870" y="24.3" width="91" height="3.2"/><rect x="977" y="23.8" width="83" height="3.2"/><rect x="344" y="58.7" width="67" height="3.2"/><rect x="419" y="57.2" width="80" height="3.2"/><rect x="509" y="57.4" width="174" height="3.2"/><rect x="695" y="57.7" width="149" height="3.2"/><rect x="856" y="57.1" width="69" height="3.2"/><rect x="933" y="57.9" width="127" height="3.2"/><rect x="344" y="91.9" width="142" height="3.2"/><rect x="495" y="92.4" width="171" height="3.2"/><rect x="675" y="92.1" width="140" height="3.2"/><rect x="830" y="91.6" width="162" height="3.2"/><rect x="1008" y="91.8" width="52" height="3.2"/><rect x="344" y="126.0" width="81" height="3.2"/><rect x="432" y="126.5" width="154" height="3.2"/><rect x="597" y="125.6" width="183" height="3.2"/><rect x="792" y="126.2" width="143" height="3.2"/><rect x="946" y="126.9" width="114" height="3.2"/><rect x="344" y="159.1" width="153" height="3.2"/><rect x="510" y="161.0" width="151" height="3.2"/><rect x="675" y="159.8" width="100" height="3.2"/><rect x="787" y="159.9" width="63" height="3.2"/><rect x="858" y="159.1" width="76" height="3.2"/><rect x="948" y="159.5" width="78" height="3.2"/><rect x="1036" y="159.2" width="24" height="3.2"/><rect x="344" y="194.8" width="137" height="3.2"/><rect x="495" y="193.6" width="181" height="3.2"/><rect x="686" y="194.8" width="110" height="3.2"/><rect x="812" y="193.4" width="81" height="3.2"/><rect x="901" y="194.0" width="93" height="3.2"/><rect x="1006" y="193.0" width="54" height="3.2"/><rect x="344" y="228.1" width="112" height="3.2"/><rect x="471" y="228.0" width="157" height="3.2"/><rect x="640" y="227.1" width="155" height="3.2"/><rect x="810" y="228.7" width="169" height="3.2"/><rect x="993" y="227.8" width="67" height="3.2"/><rect x="344" y="261.1" width="149" height="3.2"/><rect x="499" y="261.3" width="89" height="3.2"/><rect x="598" y="261.0" width="67" height="3.2"/><rect x="673" y="261.7" width="74" height="3.2"/><rect x="753" y="262.2" width="182" height="3.2"/><rect x="943" y="261.7" width="95" height="3.2"/><rect x="1048" y="262.7" width="12" height="3.2"/><rect x="344" y="296.0" width="125" height="3.2"/><rect x="476" y="295.7" width="74" height="3.2"/><rect x="559" y="295.3" width="176" height="3.2"/><rect x="741" y="296.1" width="193" height="3.2"/><rect x="942" y="295.1" width="118" height="3.2"/><rect x="344" y="330.7" width="197" height="3.2"/><rect x="554" y="329.7" width="97" height="3.2"/><rect x="658" y="330.1" width="168" height="3.2"/><rect x="840" y="329.4" width="106" height="3.2"/><rect x="960" y="330.7" width="100" height="3.2"/><rect x="344" y="364.5" width="175" height="3.2"/><rect x="527" y="363.7" width="132" height="3.2"/><rect x="666" y="363.6" width="64" height="3.2"/><rect x="738" y="364.9" width="157" height="3.2"/><rect x="906" y="365.0" width="154" height="3.2"/><rect x="344" y="397.4" width="111" height="3.2"/><rect x="463" y="397.4" width="88" height="3.2"/><rect x="563" y="398.7" width="186" height="3.2"/><rect x="760" y="398.6" width="151" height="3.2"/><rect x="918" y="398.8" width="142" height="3.2"/><rect x="344" y="432.0" width="165" height="3.2"/><rect x="517" y="431.7" width="170" height="3.2"/><rect x="701" y="431.8" width="196" height="3.2"/><rect x="907" y="432.4" width="153" height="3.2"/><rect x="344" y="465.3" width="78" height="3.2"/><rect x="437" y="465.3" width="173" height="3.2"/><rect x="624" y="466.3" width="197" height="3.2"/><rect x="831" y="465.3" width="137" height="3.2"/><rect x="974" y="466.3" width="86" height="3.2"/><rect x="344" y="499.9" width="191" height="3.2"/><rect x="549" y="499.4" width="176" height="3.2"/><rect x="734" y="499.5" width="101" height="3.2"/><rect x="846" y="499.8" width="96" height="3.2"/><rect x="950" y="499.7" width="110" height="3.2"/><rect x="344" y="534.8" width="142" height="3.2"/><rect x="496" y="534.0" width="188" height="3.2"/><rect x="696" y="533.0" width="133" height="3.2"/><rect x="839" y="533.0" width="86" height="3.2"/><rect x="939" y="533.9" width="84" height="3.2"/><rect x="1036" y="533.7" width="24" height="3.2"/><rect x="344" y="568.6" width="138" height="3.2"/><rect x="489" y="567.5" width="138" height="3.2"/><rect x="636" y="568.0" width="168" height="3.2"/><rect x="816" y="568.8" width="166" height="3.2"/><rect x="993" y="568.0" width="67" height="3.2"/><rect x="344" y="601.9" width="157" height="3.2"/><rect x="512" y="602.9" width="127" height="3.2"/><rect x="652" y="602.9" width="183" height="3.2"/><rect x="844" y="602.9" width="138" height="3.2"/><rect x="996" y="601.2" width="64" height="3.2"/><rect x="344" y="635.5" width="70" height="3.2"/><rect x="421" y="636.6" width="154" height="3.2"/><rect x="590" y="636.4" width="82" height="3.2"/><rect x="684" y="636.8" width="80" height="3.2"/><rect x="780" y="636.9" width="91" height="3.2"/><rect x="880" y="637.0" width="128" height="3.2"/><rect x="1023" y="635.9" width="37" height="3.2"/><rect x="344" y="669.4" width="107" height="3.2"/><rect x="461" y="669.0" width="161" height="3.2"/><rect x="633" y="669.0" width="122" height="3.2"/><rect x="764" y="670.0" width="147" height="3.2"/><rect x="918" y="670.6" width="142" height="3.2"/><rect x="344" y="703.5" width="75" height="3.2"/><rect x="425" y="703.5" width="169" height="3.2"/><rect x="601" y="704.8" width="119" height="3.2"/><rect x="735" y="703.3" width="96" height="3.2"/><rect x="846" y="704.4" width="140" height="3.2"/><rect x="993" y="704.4" width="67" height="3.2"/><rect x="344" y="738.9" width="70" height="3.2"/><rect x="426" y="737.2" width="172" height="3.2"/><rect x="613" y="738.7" width="69" height="3.2"/><rect x="693" y="738.1" width="107" height="3.2"/><rect x="816" y="737.3" width="98" height="3.2"/><rect x="925" y="737.2" width="93" height="3.2"/><rect x="1026" y="737.4" width="34" height="3.2"/><rect x="344" y="772.5" width="103" height="3.2"/><rect x="456" y="771.4" width="130" height="3.2"/><rect x="595" y="771.5" width="63" height="3.2"/><rect x="664" y="772.1" width="163" height="3.2"/><rect x="834" y="772.9" width="126" height="3.2"/><rect x="968" y="771.9" width="92" height="3.2"/><path d="M2136 776 q -1.1 -6 -0.5 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1756 746 q 0.5 -6 1.0 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2361 752 q 1.0 -6 2.1 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2166 748 q 0.7 -6 -2.3 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1388 777 q 1.4 -6 -1.2 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1483 787 q 0.3 -6 -0.8 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1744 745 q 1.0 -6 -1.8 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1390 758 q -1.0 -6 -1.5 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1965 787 q -1.4 -6 2.3 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1290 757 q 0.3 -6 -1.0 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1377 789 q -0.4 -6 3.0 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1284 738 q 0.0 -6 -1.6 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1178 757 q 1.2 -6 0.9 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2268 784 q 2.0 -6 -2.4 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2053 790 q -0.1 -6 1.9 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2311 753 q 1.4 -6 2.5 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1341 786 q -1.8 -6 -1.2 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2070 737 q -1.5 -6 -1.9 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1964 756 q 1.9 -6 0.5 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1586 753 q 1.7 -6 -0.8 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1320 735 q 1.5 -6 -0.3 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1464 754 q -1.0 -6 1.7 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2342 742 q 1.8 -6 -2.4 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2354 746 q 0.4 -6 0.7 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1564 780 q -1.1 -6 -0.8 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2169 759 q -1.4 -6 -1.8 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1164 761 q -1.0 -6 0.6 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1585 786 q 0.6 -6 -1.8 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1351 755 q -2.0 -6 -1.0 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2266 737 q 0.7 -6 -1.9 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1634 780 q -0.8 -6 -1.8 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2097 737 q 1.2 -6 0.3 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1145 738 q -1.7 -6 -2.4 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2296 749 q -0.4 -6 0.3 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2071 784 q 0.6 -6 -2.5 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1541 750 q -1.3 -6 1.2 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2345 769 q -0.4 -6 -1.3 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1441 774 q -0.8 -6 2.7 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1511 750 q -0.8 -6 0.4 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1105 777 q -0.6 -6 -0.5 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2291 770 q 1.5 -6 3.0 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2326 736 q -0.5 -6 -1.8 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1404 761 q 0.9 -6 -1.8 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2344 787 q -2.0 -6 2.4 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1602 749 q -0.3 -6 1.9 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1659 762 q -0.4 -6 2.3 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2307 745 q -0.2 -6 -2.0 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2143 776 q -1.9 -6 0.3 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2170 778 q 0.6 -6 2.5 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1889 753 q -1.6 -6 0.7 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1515 755 q -0.5 -6 0.0 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2117 739 q -1.4 -6 -1.3 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1357 776 q 0.1 -6 2.6 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1421 739 q -1.6 -6 -0.1 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1144 765 q 1.2 -6 2.8 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1523 789 q -1.2 -6 -2.2 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2249 789 q 1.8 -6 2.9 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1444 740 q -0.1 -6 -2.7 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M1225 762 q 1.7 -6 -0.7 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/><path d="M2023 760 q 1.6 -6 0.7 -12" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round"/>
+            <rect x="0" y="0" width="340" height="800"/>
+            <path data-rough="482.2 365.0 757.8 365.0 737.0 614.6 505.6 614.6"/><path data-rough="417.2 357.2 553.7 222.0 686.3 222.0 826.7 357.2"/><path data-rough="409.4 349.4 834.5 349.4 834.5 372.8 409.4 372.8"/><path data-rough="492.6 604.2 750.0 604.2 750.0 651.0 492.6 651.0"/><path data-rough="599.2 190.8 640.8 190.8 640.8 224.6 599.2 224.6"/><circle cx="620.0" cy="146.6" r="54.6"/>
+            <path d="M900 104 Q905.52 144.48 934.5 150 Q905.52 155.52 900 196 Q894.48 155.52 865.5 150 Q894.48 144.48 900 104Z"/><circle cx="955" cy="262" r="15"/>
+            <circle cx="620.0" cy="146.6" r="23.4"/>
+          </g>
+          <g fill="none" stroke="#000" stroke-linecap="round"><path d="M418 84 C 500 80 560 86 620 84 M620 84 C 624 90 624 94 620 92" stroke-width="13"/><path d="M418 176 C 430 120 470 92 532 86" stroke-width="8"/></g>
+          <rect x="402" y="56" width="22" height="134" rx="3" fill="#000"/>
+          <rect x="1060" y="0" width="30" height="800" fill="#000"/>
+          <g fill="#fff"><path data-rough="503.0 380.6 608.3 380.6 608.3 599.0 522.5 599.0"/><path data-rough="635.6 380.6 737.0 380.6 718.8 599.0 635.6 599.0"/></g>
+          <circle cx="620" cy="469" r="96" fill="url(#kd4)"/>
+          <circle cx="620" cy="469" r="56" fill="url(#kd3)"/>
+        </mask>
+      </defs>
+      <rect x="0" y="0" width="2400" height="800" fill="#efe5cd"/>
+      <rect x="0" y="0" width="2400" height="800" fill="#263174" mask="url(#eB)"/>
+      <g style="mix-blend-mode:multiply"><g transform="translate(6 -4)"><g mask="url(#eA)">
+        <rect x="0" y="0" width="2400" height="800" fill="#f6a71c"/>
+      </g><g data-rings="620 476 440 345 262 188 116 1 a" mask="url(#eSky)"></g></g></g>
+    </svg>
+    <svg class="layer" id="over" viewBox="0 0 2400 800" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
+    <div class="speckle"></div>
+    <div class="grain"></div>
+    <div class="words">
+      <div class="mark">Porchlight</div>
+      <p class="tag">Leave the <span class="lit">light</span> on<br>for cloud agents.</p>
+    </div>
+</div>
+<script>
+(() => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const CH = 7;
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  let seed = 21;
+  const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const mk = (tag, a, p) => { const n = document.createElementNS(NS, tag); for (const k in a) n.setAttribute(k, a[k]); p && p.appendChild(n); return n; };
+  document.querySelectorAll('[data-rough]').forEach((el, idx) => {
+    const v = el.dataset.rough.split(' ').map(Number), pts = [];
+    for (let i = 0; i < v.length; i += 2) pts.push([v[i], v[i + 1]]);
+    let d = '', o = idx * 3.7;
+    pts.forEach((p, i) => {
+      const n = pts[(i + 1) % pts.length], len = Math.hypot(n[0] - p[0], n[1] - p[1]), steps = Math.max(1, Math.round(len / 9));
+      const nx = -(n[1] - p[1]) / (len || 1), ny = (n[0] - p[0]) / (len || 1);
+      for (let s = 0; s < steps; s++) {
+        const t = s / steps, k = (o += .9), a = (s === 0 ? 0 : 1) * (Math.sin(k) * .9 + Math.sin(k * 2.7) * .5 + Math.sin(k * 6.1) * .25) * 1.1;
+        const x = lerp(p[0], n[0], t) + nx * a, y = lerp(p[1], n[1], t) + ny * a;
+        d += (d ? ' L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+      }
+    });
+    el.setAttribute('d', d + 'Z');
+  });
+  // halftone light, in slightly uneven rings
+  document.querySelectorAll('[data-rings]').forEach(g => {
+    const [cx, cy, r4, r3, r2, r1, r0, sy, kind] = g.dataset.rings.split(' ');
+    const fills = kind === 'k' ? ['url(#kd4)', 'url(#kd3)', 'url(#kd2)', 'url(#kd1)', '#000'] : ['url(#ad4)', 'url(#ad3)', 'url(#ad2)', 'url(#ad1)', '#f6a71c'];
+    [r4, r3, r2, r1, r0].forEach((r, i) => {
+      const pts = [], n = 28, R = +r; let s = 7 + i * 13 + (+cx);
+      const jr = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+      for (let k = 0; k < n; k++) { const a = k / n * Math.PI * 2, rr = R * (1 + (jr() - .5) * .07); pts.push([+cx + Math.cos(a) * rr, +cy + Math.sin(a) * rr * +sy]); }
+      let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+      for (let k = 0; k < n; k++) { const p0 = pts[k], p1 = pts[(k + 1) % n]; d += ` Q${p0[0].toFixed(1)} ${p0[1].toFixed(1)} ${((p0[0] + p1[0]) / 2).toFixed(1)} ${((p0[1] + p1[1]) / 2).toFixed(1)}`; }
+      mk('path', { d: d + 'Z', fill: fills[i] }, g);
+    });
+  });
+
+  function moth(parent, opts = {}) {
+    const f = (.11 + rnd() * .07).toFixed(2);
+    const g = mk('g', {}, parent);
+    g.innerHTML = `${opts.note ? `<g class="note"><path d="M0 4 L0 20" stroke="#25200d" stroke-width="1"/><g transform="translate(-9 19) rotate(-6)"><rect width="18" height="13" fill="#fbf5e6" stroke="#25200d" stroke-width="1"/><path d="M3 4 h12 M3 7 h9 M3 10 h11" stroke="#263174" stroke-width=".9"/></g></g><g class="ans" style="display:none"><path d="M0 4 L0 20" stroke="#25200d" stroke-width="1"/><g transform="translate(-9 19) rotate(5)"><rect width="18" height="13" fill="#fbf5e6" stroke="#25200d" stroke-width="1"/><path d="M3 4 h12 M3 7 h9 M3 10 h11" stroke="#25200d" stroke-width="1.6"/><circle cx="14" cy="3.5" r="2.4" fill="#f6a71c"/></g></g>` : ''}
+      <path class="mothwing l" style="--f:${f}s" d="M0 -3 C -4 -10 -13 -12 -14 -5 C -15 1 -8 3 0 2 Z M0 1 C -4 2 -10 5 -8 10 C -6 13 -2 8 0 4 Z" fill="${opts.note ? '#f6a71c' : '#fbf5e6'}" stroke="#25200d" stroke-width="1.1" stroke-linejoin="round"/>
+      <path class="mothwing r" style="--f:${f}s" d="M0 -3 C 4 -10 13 -12 14 -5 C 15 1 8 3 0 2 Z M0 1 C 4 2 10 5 8 10 C 6 13 2 8 0 4 Z" fill="${opts.note ? '#f6a71c' : '#fbf5e6'}" stroke="#25200d" stroke-width="1.1" stroke-linejoin="round"/>
+      <ellipse rx="1.9" ry="6.5" cy="1" fill="#25200d"/>
+      <path d="M-.6 -5 C -2 -9 -4 -11 -6 -12 M.6 -5 C 2 -9 4 -11 6 -12" fill="none" stroke="#25200d" stroke-width=".9" stroke-linecap="round"/>
+      <circle cx="-8" cy="-5.5" r="1.4" fill="${opts.note ? '#25200d' : '#263174'}"/><circle cx="8" cy="-5.5" r="1.4" fill="${opts.note ? '#25200d' : '#263174'}"/>`;
+    return g;
+  }
+  const LAMP = [1155, 745];
+  // where each moth idles while the street is still dark (street units; all inside the opening frame)
+  const HOMES = [[735, 255], [1010, 165], [1290, 300], [1465, 545], [815, 505], [1175, 105], [745, 690], [880, 250]];
+  // the marigold moth never joins the swarm: it idles out in the sky, and edges a little closer (curious) once the light is on
+  function mothParams(i, sc, spread, home) {
+    const side = i % 2 ? 1 : -1;
+    return { R: (70 + i * 30 + rnd() * 30) * spread, ry: .55 + rnd() * .25, w: (rnd() < .5 ? -1 : 1) * (.45 + rnd() * .5), ph: rnd() * 6.3, p2: rnd() * 6.3, p3: rnd() * 6.3, s: sc * (.85 + rnd() * .35),
+      hx: home ? home[0] : LAMP[0], hy: home ? home[1] : LAMP[1], ax: 38 + rnd() * 34, ay: 22 + rnd() * 22, f1: .22 + rnd() * .22, f2: .28 + rnd() * .24,
+      bend: side * (70 + rnd() * 90), delay: .15 + i * .3 + rnd() * .25, dur: 2.4 + rnd() * 1.0 };
+  }
+  function makeFlock(svg, n, sc, spread = 1, homes) {
+    const ms = [];
+    for (let i = 0; i < n; i++) ms.push(Object.assign({ g: moth(svg) }, mothParams(i, sc, spread, homes && homes[i])));
+    return ms;
+  }
+  const orbitAt = (m, tt) => {
+    const th = m.ph + m.w * tt + .5 * Math.sin(.7 * tt + m.p2), R = m.R * (1 + .16 * Math.sin(1.3 * tt + m.p3));
+    const c = m.c || LAMP;
+    return [c[0] + Math.cos(th) * R + 10 * Math.sin(3.1 * tt + m.p2), c[1] - 10 + Math.sin(th) * R * m.ry + 9 * Math.sin(2.3 * tt + m.p3)];
+  };
+  // idle flight in the dark: a slow lazy loop around home, with a little flutter on top
+  const wanderAt = (m, tt) => [
+    m.hx + m.ax * Math.sin(tt * m.f1 + m.ph) + 9 * Math.sin(tt * 2.1 + m.p2) + 4 * Math.sin(tt * 5.3 + m.p3),
+    m.hy + m.ay * Math.sin(tt * m.f2 + m.p3) + 7 * Math.sin(tt * 2.9 + m.ph) + 3 * Math.sin(tt * 6.1 + m.p2)
+  ];
+  // since: -1 = still dark, null = settled at the lamp, number = seconds since the light came on
+  function mothAt(m, tt, since) {
+    if (since === -1) return wanderAt(m, tt);
+    if (since === null) return orbitAt(m, tt);
+    const k = clamp((since - m.delay) / m.dur);
+    if (k <= 0) return wanderAt(m, tt);
+    if (k >= 1) return orbitAt(m, tt);
+    const e = ease(k), W = wanderAt(m, tt), O = orbitAt(m, tt), dx = O[0] - W[0], dy = O[1] - W[1], L = Math.hypot(dx, dy) || 1, b = m.bend * Math.sin(Math.PI * e);
+    return [lerp(W[0], O[0], e) - dy / L * b, lerp(W[1], O[1], e) + dx / L * b];
+  }
+  function poseAt(m, tt, since) {
+    const [x, y] = mothAt(m, tt, since), [x2, y2] = mothAt(m, tt + .05, since === -1 || since === null ? since : since + .05);
+    return [x, y, Math.atan2(y2 - y, x2 - x) * 57.2958 + 90];
+  }
+  function placeFlock(ms, t, since, alpha, maxS = 99) {
+    ms.forEach(m => {
+      const [x, y, hd] = poseAt(m, t, since);
+      m.g.style.display = alpha > 0.01 ? '' : 'none'; m.g.style.opacity = alpha.toFixed(2);
+      m.g.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${hd.toFixed(0)}) scale(${Math.min(m.s, maxS).toFixed(2)})`);
+    });
+  }
+
+
+  const over = document.getElementById('over');
+  const flock = makeFlock(over, 8, 2, 1.3);
+  const C = [[1100, 190, 80], [1050, 640, 70], [2260, 560, 80]];
+  flock.forEach((m, i) => { m.c = [620, 466]; m.ry = .55 + m.ry * .3; if (i > 4) { const [x, y, r] = C[i - 5]; m.c = [x, y]; m.R = r; m.ry = .5; } });
+  placeFlock(flock, 8, null, 1);
+  const rest = moth(over, { note: true });
+  rest.querySelectorAll('.note,.ans').forEach(n => n.remove());
+  rest.setAttribute('transform', 'translate(724 244) rotate(-46) scale(2.7)');
+})();
+</script>
+</body></html>
