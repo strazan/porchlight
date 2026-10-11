@@ -1,142 +1,137 @@
-# Porchlight
+<p align="center">
+  <img src="docs/assets/icon.svg" width="88" height="88" alt="">
+</p>
 
-Use the MCP servers on your Mac from Claude.ai, ChatGPT, and other cloud AI clients.
+<h1 align="center">Porchlight</h1>
 
-Cloud clients can only connect to MCP servers at a public HTTPS URL, but most useful
-servers are local stdio processes. Porchlight runs a small relay **in your own
-Cloudflare account** and keeps an outbound connection to it from your Mac, so there are
-no open ports, no ngrok, and no URL that changes every time.
+<p align="center">
+  <strong>Leave the light on for your AI.</strong><br>
+  Use the MCP servers on your Mac from Claude, ChatGPT and any cloud AI app,<br>
+  through a relay you own, with every app and risky tool call approved by you.
+</p>
 
-```
-Claude.ai / ChatGPT ──HTTPS──▶ your relay (Cloudflare Worker + Durable Object)
-                                     ▲
-                                     │ outbound WebSocket
-                               your Mac: Porchlight ──stdio──▶ MCP servers
-```
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-e8941a" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-555" alt="macOS 14 or later">
+  <img src="https://img.shields.io/badge/relay-Cloudflare%20free%20plan-555" alt="Relay runs on Cloudflare's free plan">
+</p>
 
-> **Status: early.** The menubar app runs your servers and serves them through your
-> relay, combined at `/mcp` and one by one at `/mcp/<name>`. Apps connect with OAuth,
-> and you approve each one on your Mac. One-click deploy comes next. See the roadmap below.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/menu-waiting-dark.png">
+    <img src="docs/assets/menu-waiting.png" width="330" alt="Porchlight in the menu bar: connected, with three servers and Claude asking to use a tool">
+  </picture>
+  &nbsp;
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/prompt-pairing-dark.png">
+    <img src="docs/assets/prompt-pairing.png" width="440" alt="Approving ChatGPT with a code that matches the browser">
+  </picture>
+</p>
 
-## Repository
+---
 
-| Path | What |
-|---|---|
-| `relay/` | The relay: a Cloudflare Worker + Durable Object (TypeScript). It tunnels HTTP over a WebSocket and doesn't parse MCP at all. |
-| `app/Porchlight.xcodeproj`, `app/Porchlight/` | The macOS menubar app (SwiftUI). |
-| `app/PorchlightCore/` | Swift package: `PorchlightCore` (relay client, stdio bridge) and `porchlight-cli`. |
-| `protocol/PROTOCOL.md` | The wire protocol between relay and host. |
+The most useful MCP servers run on your own computer: your notes, your files, your
+repos. But Claude.ai, ChatGPT and other cloud AI apps can only reach servers on the
+public internet. Tunnels like ngrok change URL every run, don't speak MCP's OAuth, and
+hand every tool to anyone who finds the link.
 
-## Try it locally
+Porchlight is a menu bar app that gives your Mac's MCP servers **one permanent,
+private URL**, through a small relay that runs in **your own Cloudflare account**. Cloud
+apps sign in with OAuth, you approve each one on your Mac, and anything sensitive asks
+you first.
 
-Requirements: Node 20+, Xcode 26+.
+> [!NOTE]
+> Porchlight is in early development. The first release is coming soon; until then you
+> can [build it from source](#build-from-source).
 
-```sh
-cd relay && npm install && cd ..
-make dev                      # relay on http://localhost:8787 (secret from relay/.dev.vars)
+## Features
 
-# in another terminal
-make build-cli
-PORCHLIGHT_SECRET=dev-secret-change-me app/PorchlightCore/.build/release/porchlight-cli \
-  --relay http://localhost:8787 --name everything \
-  -- npx -y @modelcontextprotocol/server-everything
-
-# or serve the app's server list headless (or any servers.json):
-#   app/PorchlightCore/.build/release/porchlight-cli --relay http://localhost:8787 [--config servers.json]
-# The CLI asks on the terminal when an app wants to connect.
-
-# in a third terminal: connect with MCP Inspector (choose Streamable HTTP and OAuth)
-npx @modelcontextprotocol/inspector
-```
-
-Or use the menubar app instead of the CLI: `make app` builds `Porchlight.app` and opens it
-(or open `app/Porchlight.xcodeproj` in Xcode and run it). Look for the lightbulb in the menubar
-and enter the relay URL and secret in Settings.
-
-You need to create `relay/.dev.vars` yourself (it's gitignored):
-
-```
-AGENT_SECRET=dev-secret-change-me
-```
-
-## Deploy your own relay
-
-**From the app:** Settings → Relay → **Deploy to Cloudflare…** The wizard opens a
-pre-filled Cloudflare API token page (Workers Scripts and Workers KV, edit), then
-creates everything and connects Porchlight to the new relay. The token stays in your
-Keychain so Porchlight can update the relay when a new version ships with the app.
-
-**By hand, with wrangler:**
-
-```sh
-cd relay
-npx wrangler login
-openssl rand -hex 32 | npx wrangler secret put AGENT_SECRET   # shared with your Mac
-npx wrangler deploy                                           # also creates the OAUTH_KV namespace
-```
-
-Then enter `https://porchlight-relay.<you>.workers.dev` and your `AGENT_SECRET` in
-Settings → Relay.
-
-**Connecting apps:** add `https://porchlight-relay.<you>.workers.dev/mcp` as a custom
-connector in Claude, ChatGPT or any MCP client that supports OAuth. When it connects,
-your browser shows a code and Porchlight asks you to approve the app with the same code.
-Apps you've approved are listed under Settings → Apps, where you can revoke them.
-
-## Staying in control
-
-- **Approve each app.** A new connection shows a code in the browser and the same code
-  on your Mac; nothing connects until you allow it.
-- **Choose what each app can use.** When you approve an app, pick all servers or just
-  some. Change it any time under Settings → Apps, or revoke the app entirely.
-- **Approve tool calls.** By default Porchlight asks before any tool that doesn't
-  declare itself read-only, showing the app, tool and arguments: allow once, always
-  allow, or deny. Per server you can instead run tools without asking or ask before
-  every tool, and set individual tools to Allow, Ask or Block (blocked tools are hidden).
-- **See what happened.** The Activity window lists every request: app, tool, server,
-  time taken and result.
-
-The relay fits in Cloudflare's free tier. The Durable Object hibernates while idle,
-and keepalive pings are answered without waking it.
+- **One URL for everything.** All your servers behind a single connector, with tools
+  named `server__tool`, or one URL per server.
+- **Any local server.** Commands like `npx` and `uvx` servers, and servers already
+  running on your Mac, like Obsidian's. Import what you've set up in Claude Desktop,
+  Claude Code or Cursor in one click.
+- **You approve every app.** Connecting shows a code in the browser and the same code on
+  your Mac. Nothing gets in until you click Allow.
+- **Tool permissions.** Read-only tools run right away; anything else asks first, showing
+  exactly what the app wants to do. Allow once, always allow, or deny, or set any tool to
+  Allow, Ask or Block.
+- **Per-app access.** Give Claude everything and ChatGPT only your notes. Revoke any app
+  at any time.
+- **Activity.** Every request from every app, with its tool, server, duration and result.
+- **One-click relay.** Porchlight deploys and updates the relay for you, on Cloudflare's
+  free plan, at a `workers.dev` address. No domain needed.
+- **Keeps itself up.** Restarts crashed servers and reconnects after sleep or network
+  changes. No open ports: your Mac only connects out.
 
 ## How it works
 
-- Your Mac opens a WebSocket to `/agent` and authenticates with `AGENT_SECRET`.
-- MCP clients authorize with OAuth 2.1 against the relay (dynamic registration or Client
-  ID Metadata Documents, PKCE). The consent step is approved on your Mac.
-- They then send Streamable HTTP requests to `/mcp` (or `/mcp/<server>`). The relay
-  checks the token, forwards each request over the socket and streams the response back.
-- On the Mac, each server runs as one child process shared by all clients. Porchlight
-  does the `initialize` handshake itself (and again if the server restarts), rewrites
-  JSON-RPC ids so clients can't collide, and answers `tools/call` over SSE with
-  keepalives and progress notifications, so long-running tools work.
-- `/mcp` combines every enabled server: tools and prompts are renamed
-  `<server>__<name>`, and resources are routed by URI. `/mcp/<name>` serves one
-  server unchanged.
-
-## Roadmap
-
-- [x] **M0**: relay + CLI host, one stdio server, end to end
-- [x] **M1**: OAuth 2.1 at the relay, where you approve new clients on your Mac
-- [x] **M2**: menubar app: manage servers, import from Claude Desktop/Claude Code/Cursor configs, one combined endpoint plus one per server
-- [x] **M3**: one-click deploy to your Cloudflare account from the app, launch at login, reconnect on wake and network changes
-- [x] **M4**: per-tool permissions with approvals, per-app server access, activity log, revoke apps
-- [ ] **M5**: signed releases, Homebrew cask, self-hosted relay (Docker)
-
-## Development
-
-```sh
-make test          # relay (vitest in workerd) + PorchlightCore (Swift Testing)
-make app           # build and open the menubar app
-make relay-bundle  # after changing relay/: rebuild the relay the app deploys
-make release       # optimized build of the app
-make snapshots     # render every screen (light and dark) to app/build/snapshots
-                   # (PORCHLIGHT_SNAPSHOTS_ONLINE=1 make snapshots: with real app and server icons)
+```mermaid
+flowchart LR
+    apps["Claude · ChatGPT<br/>(cloud AI apps)"] -- "HTTPS + OAuth 2.1" --> relay["Your relay<br/>(Cloudflare, your account)"]
+    mac["Porchlight<br/>(your Mac)"] -- "outbound WebSocket" --> relay
+    mac --> s1["obsidian"]
+    mac --> s2["filesystem"]
+    mac --> s3["github, …"]
 ```
 
-Builds are signed to run locally. To sign with your own Apple Developer team, see
-`app/Config/Base.xcconfig`.
+1. Your Mac keeps one outbound connection open to your relay.
+2. A cloud app calls the relay's URL. The relay checks its sign-in and passes the request
+   to your Mac.
+3. Porchlight checks what that app may use, asks you if a tool needs approval, and
+   forwards the request to the right server. The answer goes back the same way.
+
+The relay is a pipe: it keeps sign-in records, never your files, notes or tool results.
+
+## Getting started
+
+### Build from source
+
+You need macOS 14 or later and Xcode.
+
+```sh
+git clone https://github.com/strazan/porchlight
+cd porchlight
+make app
+```
+
+### Set up
+
+Click the lightbulb in the menu bar and follow **Set Up Porchlight…**:
+
+1. **Deploy your relay.** Settings → Relay → **Deploy to Cloudflare…** opens a pre-filled
+   page for a Cloudflare API token. Paste it back and Porchlight does the rest. You need
+   a free Cloudflare account.
+2. **Add servers.** Settings → Servers → **Import…** to bring in the servers you use in
+   Claude Desktop, Claude Code or Cursor, or **+** to add a command or a local URL.
+3. **Connect an app.** Copy the connector URL from the menu bar and add it as a custom
+   connector, e.g. in Claude under **Settings → Connectors → Add custom connector**.
+   Approve it on your Mac when the codes match.
+
+Your Mac needs to be awake for cloud apps to reach your servers. Porchlight can keep it
+from idle-sleeping while it's on (Settings → General).
+
+## Security
+
+- Apps sign in with **OAuth 2.1** (PKCE, short-lived tokens, dynamic registration and
+  client metadata documents), and every new app also needs your approval on the Mac with
+  a matching code.
+- **No inbound connections.** Your Mac makes one outbound connection to your relay;
+  nothing on your network listens to the internet.
+- **Your infrastructure.** The relay runs in your Cloudflare account. There's no
+  Porchlight service in between.
+- Apps only see the servers you allow, blocked tools are hidden entirely, and tool calls
+  that can change things ask first by default.
+
+Found a security issue? Please report it privately through GitHub's
+[security advisories](https://github.com/strazan/porchlight/security/advisories/new)
+rather than in a public issue.
+
+## Contributing
+
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers how the
+project is laid out, running everything locally, tests and releases.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE). Porchlight isn't affiliated with Anthropic, OpenAI or Cloudflare.

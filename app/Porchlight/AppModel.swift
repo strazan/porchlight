@@ -553,10 +553,10 @@ final class AppModel {
     func loadSampleData(_ scenario: SampleScenario) {
         precondition(isPreview, "sample data is only for previews")
         guard scenario != .firstRun else { return }
-        relayURL = "https://porchlight-relay.sigge.workers.dev"
+        relayURL = "https://porchlight-relay.you.workers.dev"
         secret = "sample-secret"
         state = .relay(.connected)
-        deployment = Deployment(accountID: "a1", accountName: "Sigge's Account", scriptName: "porchlight-relay", relaySHA: bundledRelay?.sha256 ?? "")
+        deployment = Deployment(accountID: "a1", accountName: "Personal", scriptName: "porchlight-relay", relaySHA: bundledRelay?.sha256 ?? "")
 
         var obsidian = ServerConfig(name: "obsidian", url: "http://127.0.0.1:27123/mcp/", headers: ["Authorization": "Bearer 0123456789abcdef"])
         obsidian.toolPolicy.overrides = ["search": .allow, "delete_note": .deny]
@@ -574,6 +574,8 @@ final class AppModel {
             PairedClient(id: "g2", clientID: "dcr-7f3a", clientName: "ChatGPT", clientDomain: nil, createdAt: now.addingTimeInterval(-2 * 3600)),
         ]
         clientAccess = ["dcr-7f3a": ["obsidian"]]
+        // As a real pairing would: where its access went is where its icon comes from.
+        icons.learnWebsite("chatgpt.com", for: IconStore.key(app: "dcr-7f3a"))
 
         let claude = ClientIdentity(id: "https://claude.ai/oauth/mcp-oauth-client-metadata", name: "Claude")
         let chatgpt = ClientIdentity(id: "dcr-7f3a", name: "ChatGPT")
@@ -586,7 +588,7 @@ final class AppModel {
             ActivityEvent(date: now.addingTimeInterval(-120), client: claude, server: "github", method: "tools/call", tool: "list_issues", duration: .milliseconds(12), outcome: .error("Could not start github: Exited with status 125")),
         ]
         for (index, line) in [
-            (nil, "Connecting to https://porchlight-relay.sigge.workers.dev"),
+            (nil, "Connecting to https://porchlight-relay.you.workers.dev"),
             (nil, "Relay connected"),
             ("obsidian", "connected to http://127.0.0.1:27123/mcp/"),
             ("filesystem", "started: npx -y @modelcontextprotocol/server-filesystem /Users/you/Documents"),

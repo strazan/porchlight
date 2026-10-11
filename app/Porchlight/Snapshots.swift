@@ -22,9 +22,14 @@ enum Snapshots {
         let only = ProcessInfo.processInfo.environment["PORCHLIGHT_SNAPSHOTS_ONLY"]
         Task {
             if ProcessInfo.processInfo.environment["PORCHLIGHT_SNAPSHOTS_ONLINE"] != nil { await prefetchIcons() }
-            for shot in catalog() where only.map({ shot.name.contains($0) }) ?? true {
+            let wanted = only.map { $0.split(separator: ",").map(String.init) }
+            for shot in catalog() where wanted.map({ names in names.contains { shot.name.contains($0) } }) ?? true {
                 for dark in [false, true] {
-                    render(shot, dark: dark, into: directory)
+                    if ProcessInfo.processInfo.environment["PORCHLIGHT_SNAPSHOTS_SCREEN"] != nil {
+                        await capture(shot, dark: dark, into: directory)
+                    } else {
+                        render(shot, dark: dark, into: directory)
+                    }
                 }
             }
             exit(0)
@@ -69,7 +74,7 @@ enum Snapshots {
             shot("logs", .everything, CGSize(width: 780, height: 300), LogsView()),
             shot("deploy-token", .firstRun, nil, DeployView()),
             shot("deploy-progress", .firstRun, nil, DeployView(stage: .deploying(.upload))),
-            shot("deploy-done", .firstRun, nil, DeployView(stage: .done(URL(string: "https://porchlight-relay.sigge.workers.dev")!))),
+            shot("deploy-done", .firstRun, nil, DeployView(stage: .done(URL(string: "https://porchlight-relay.you.workers.dev")!))),
         ]
     }
 
@@ -127,6 +132,46 @@ enum Snapshots {
         try? rep.representation(using: .png, properties: [:])?.write(to: file)
     }
 }
+extension Snapshots {
+    /// Shows the screen in a real window and captures it with `screencapture`: exact colors,
+    /// materials and the window's shadow, as on screen. (Needs Screen Recording permission.)
+    fileprivate static func capture(_ shot: Shot, dark: Bool, into directory: URL) async {
+        let model = sample(shot.scenario)
+        // Settings and Activity keep their window frame; popovers, prompts and sheets get a
+        // clean rounded one (a background app's traffic lights would draw grey).
+        let framed = shot.name.hasPrefix("settings") || shot.name.hasPrefix("activity")
+        let isMenu = !framed
+        let root = shot.view
+            .environment(model)
+            // A background app can't take focus from the active one; draw controls as if it had.
+            .environment(\.controlActiveState, .key)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: isMenu ? 14 : 0))
+        let hosting = NSHostingView(rootView: root)
+        let size = shot.size ?? hosting.fittingSize
+        let style: NSWindow.StyleMask = isMenu ? [.borderless] : [.titled, .closable, .fullSizeContentView]
+        let window = KeyWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: style, backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isOpaque = !isMenu
+        window.backgroundColor = isMenu ? .clear : .windowBackgroundColor
+        window.hasShadow = true
+        window.contentView = hosting
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+        try? await Task.sleep(for: .seconds(0.8))
+        let file = directory.appending(path: "\(shot.name)\(dark ? "-dark" : "").png")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-x", "-l\(window.windowNumber)", file.path]
+        try? process.run()
+        process.waitUntilExit()
+        window.orderOut(nil)
+    }
+}
+
 /// Controls draw as active only in the key window.
 private final class KeyWindow: NSWindow {
     override var canBecomeKey: Bool { true }

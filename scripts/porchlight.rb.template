@@ -1,0 +1,26 @@
+cask "porchlight" do
+  version "{{VERSION}}"
+  sha256 "{{SHA256}}"
+
+  url "https://github.com/strazan/porchlight/releases/download/v#{version}/Porchlight-#{version}.zip"
+  name "Porchlight"
+  desc "Use the MCP servers on your Mac from Claude, ChatGPT and other cloud AI apps"
+  homepage "https://github.com/strazan/porchlight"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
+  depends_on macos: ">= :sonoma"
+
+  app "Porchlight.app"
+
+  uninstall quit: "io.github.strazan.porchlight"
+
+  zap trash: [
+    "~/Library/Application Support/Porchlight",
+    "~/Library/Caches/Porchlight",
+    "~/Library/Preferences/io.github.strazan.porchlight.plist",
+  ]
+end
