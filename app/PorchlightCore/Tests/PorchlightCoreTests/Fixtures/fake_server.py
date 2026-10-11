@@ -6,7 +6,7 @@ Exits on `tools/call` of `crash`. Counts initialize calls in the `stats` tool.
 Also one prompt (`greet`) and one resource (`fake://<name>/readme`). The server's name
 comes from FAKE_NAME so tests can tell several apart. With FAKE_MORE_TOOLS set, it also
 lists `add` (additive: neither read-only nor destructive) and `remove` (no hints, so
-destructive), which answer like echo.
+destructive), which answer like echo. FAKE_INSTRUCTIONS sets its `instructions`.
 """
 import json
 import os
@@ -50,9 +50,12 @@ for line in sys.stdin:
         continue
     if method == "initialize":
         initialized["count"] += 1
-        result(id, {"protocolVersion": params.get("protocolVersion", "2025-06-18"),
-                    "capabilities": {"tools": {}, "prompts": {}, "resources": {}},
-                    "serverInfo": {"name": NAME, "version": "1"}})
+        answer = {"protocolVersion": params.get("protocolVersion", "2025-06-18"),
+                  "capabilities": {"tools": {}, "prompts": {}, "resources": {}},
+                  "serverInfo": {"name": NAME, "version": "1"}}
+        if os.environ.get("FAKE_INSTRUCTIONS"):
+            answer["instructions"] = os.environ["FAKE_INSTRUCTIONS"]
+        result(id, answer)
     elif method == "tools/list":
         tools = [{"name": "echo", "inputSchema": {"type": "object"}, "annotations": {"readOnlyHint": True}}]
         if os.environ.get("FAKE_MORE_TOOLS"):

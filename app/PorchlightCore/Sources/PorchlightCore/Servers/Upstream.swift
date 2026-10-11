@@ -16,6 +16,8 @@ public protocol Upstream: Actor {
 
     /// The server's `initialize` response (with a null id), connecting first if needed.
     func initialize() async -> JSONValue
+    /// The server's `initialize` result if it's connected, without connecting.
+    var handshake: JSONValue? { get }
     /// Sends a request and returns the server's response, with a null id.
     func request(_ message: JSONValue, onProgress: ProgressSink?) async -> JSONValue
     func notify(_ message: JSONValue) async

@@ -19,6 +19,7 @@ public actor HTTPUpstream: Upstream {
     private var nextID = 0
     private var sessionID: String?
     private var initializeResult: JSONValue?
+    public var handshake: JSONValue? { initializeResult }
     private var negotiatedVersion: String?
     private var connecting: Task<Void, Error>?
 

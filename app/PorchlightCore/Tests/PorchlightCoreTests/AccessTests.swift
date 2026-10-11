@@ -41,7 +41,8 @@ func postFrom(_ clientID: String, _ router: Router, _ body: String, path: String
         #expect(listed.compactMap { $0["uri"]?.stringValue } == ["fake://beta/readme"])
         let initialized = await postFrom("chatgpt", router, initialize)
         let instructions = await initialized.json?["result"]?["instructions"]?.stringValue ?? ""
-        #expect(instructions.contains("(beta)"))
+        #expect(instructions.contains("- beta"))
+        #expect(!instructions.contains("alpha"))
     }
 
     @Test func limitedAppsCantReachOtherServers() async {
@@ -76,5 +77,40 @@ func postFrom(_ clientID: String, _ router: Router, _ body: String, path: String
         // No identity (not via the relay's OAuth): no limit either.
         let anonymous = await post(router, rpc(2, "tools/list"))
         #expect(names(await anonymous.json, "tools") == ["alpha__echo", "beta__echo"])
+    }
+}
+
+@Suite struct ManyToolsTests {
+    @Test func instructionsSayWhatEachServerIsFor() async {
+        var notes = fakeConfig("notes")
+        notes.env["FAKE_INSTRUCTIONS"] = "Reads and writes the notes in the user's vault.\n\nUse search before get_note."
+        let router = await makeRouter([notes, fakeConfig("plain")])
+        defer { Task { await router.stopAll() } }
+        _ = await post(router, rpc(1, "tools/list")) // connects both servers
+
+        let initialized = await post(router, initialize)
+        let instructions = await initialized.json?["result"]?["instructions"]?.stringValue ?? ""
+        #expect(instructions.contains("- notes: Reads and writes the notes in the user's vault."))
+        #expect(!instructions.contains("get_note"))
+        #expect(instructions.contains("- plain"))
+    }
+
+    @Test func summariesAreOneShortLine() {
+        let long = JSONValue.object(["instructions": .string(String(repeating: "word ", count: 80))])
+        #expect(Aggregator.summary(of: long)?.count == 200)
+        let titled = JSONValue.object(["serverInfo": .object(["name": .string("x"), "title": .string("Obsidian  Notes")])])
+        #expect(Aggregator.summary(of: titled) == "Obsidian Notes")
+        #expect(Aggregator.summary(of: .object(["instructions": .string("  ")])) == nil)
+        #expect(Aggregator.summary(of: nil) == nil)
+    }
+
+    @Test func countsWhatEachAppSees() async {
+        var blocking = ToolPolicy(defaultPermission: .allowAll)
+        blocking.overrides["remove"] = .deny
+        let router = await makeRouter([queueConfig("alpha"), queueConfig("beta", policy: blocking)])
+        defer { Task { await router.stopAll() } }
+        await router.setClientAccess(["chatgpt": ["beta"]])
+        #expect(await router.toolCount(for: "") == 5)
+        #expect(await router.toolCount(for: "chatgpt") == 2)
     }
 }

@@ -118,7 +118,7 @@ private struct ServersTab: View {
                 }
             }
             if !model.servers.isEmpty {
-                Footnote("Cloud agents see each server's tools as server__tool. Double-click a server to edit it.")
+                ToolCountNote()
             }
         }
         .padding(20)
@@ -250,12 +250,38 @@ private struct ClientsTab: View {
     }
 }
 
+/// How many tools cloud agents get in one connector, with advice when it's a lot.
+private struct ToolCountNote: View {
+    @Environment(AppModel.self) private var model
+    @State private var count: Int?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            if let count, count > AppModel.manyTools {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+            Footnote(text)
+        }
+        .task(id: model.toolsRevision) { count = await model.toolCount(for: nil) }
+    }
+
+    private var text: String {
+        guard let count else { return "Cloud agents see each server's tools as server__tool. Double-click a server to edit it." }
+        if count > AppModel.manyTools {
+            return "Cloud agents see \(count) tools in one connector. With that many they can pick the wrong one, and every "
+                + "message costs more: block tools you don't use (ⓘ), or add busy servers as their own connectors."
+        }
+        return "Cloud agents see \(count) \(count == 1 ? "tool" : "tools"), named server__tool. Double-click a server to edit it."
+    }
+}
+
 private struct ClientRow: View {
     let app: AppModel.ConnectedApp
     let access: Set<String>?
     let changeAccess: () -> Void
     let revoke: () -> Void
     @State private var changingIcon = false
+    @State private var toolCount: Int?
     @Environment(AppModel.self) private var model
 
     var body: some View {
@@ -277,8 +303,11 @@ private struct ClientRow: View {
                     .lineLimit(1)
                 Text(accessSummary)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(toolCount.map { $0 > AppModel.manyTools } == true ? .orange : .secondary)
                     .lineLimit(1)
+            }
+            .task(id: "\(model.toolsRevision)|\(access.map { $0.sorted().joined(separator: ",") } ?? "*")") {
+                toolCount = await model.toolCount(for: app.id)
             }
             Spacer()
             Menu {
@@ -321,9 +350,13 @@ private struct ClientRow: View {
     }
 
     private var accessSummary: String {
-        guard let access else { return "Can use all servers" }
-        if access.isEmpty { return "Can't use any server" }
-        return "Can use " + access.sorted().joined(separator: ", ")
+        let servers = if let access {
+            access.isEmpty ? "Can't use any server" : "Can use " + access.sorted().joined(separator: ", ")
+        } else {
+            "Can use all servers"
+        }
+        guard let toolCount, access?.isEmpty != true else { return servers }
+        return "\(servers) · \(toolCount) \(toolCount == 1 ? "tool" : "tools")"
     }
 }
 

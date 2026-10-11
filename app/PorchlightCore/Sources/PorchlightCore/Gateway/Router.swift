@@ -300,6 +300,16 @@ public actor Router: HTTPHandler {
         onActivity(event)
     }
 
+    /// How many tools an app sees at `/mcp` (all servers it may use, minus blocked tools).
+    /// Empty `clientID`: an app with access to everything.
+    public func toolCount(for clientID: String) async -> Int {
+        let allowed = clientID.isEmpty ? nil : clientAccess[clientID]
+        let list: JSONValue = .object(["jsonrpc": .string("2.0"), "id": .int(1), "method": .string("tools/list")])
+        let listed = await ScopedAggregator(aggregator: aggregator, allowed: allowed).call(list, onProgress: nil)
+        guard case .array(let tools)? = await withoutDeniedTools(listed, scope: .all)["result"]?["tools"] else { return 0 }
+        return tools.count
+    }
+
     // MARK: Offline catalog
 
     /// What an app sees while the Mac is offline, for the relay to answer with: for `/mcp` and

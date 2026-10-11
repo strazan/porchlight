@@ -24,6 +24,7 @@ public actor StdioUpstream: Upstream {
     private var pending: [String: CheckedContinuation<JSONValue, Never>] = [:]
     private var progressRoutes: [JSONValue: ProgressSink] = [:]
     private var initializeResult: JSONValue?
+    public var handshake: JSONValue? { initializeResult }
 
     public private(set) var status: UpstreamStatus = .idle {
         didSet { if status != oldValue { onStatus(status) } }

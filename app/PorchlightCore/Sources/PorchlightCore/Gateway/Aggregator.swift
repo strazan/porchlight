@@ -43,7 +43,7 @@ public actor Aggregator: MCPEndpoint {
         let params = request["params"] ?? .object([:])
         var response: JSONValue
         switch request.rpcMethod {
-        case "initialize": response = Self.result(initializeResult(params, allowed: allowed))
+        case "initialize": response = Self.result(await initializeResult(params, allowed: allowed))
         case "ping": response = Self.result(.object([:]))
         case "tools/list": response = Self.result(.object(["tools": .array(await listTools(allowed: allowed))]))
         case "tools/call": response = await callRenamed(request, .tool, allowed: allowed, onProgress: onProgress)
@@ -70,10 +70,14 @@ public actor Aggregator: MCPEndpoint {
 
     // MARK: initialize
 
-    private func initializeResult(_ params: JSONValue, allowed: Set<String>?) -> JSONValue {
+    private func initializeResult(_ params: JSONValue, allowed: Set<String>?) async -> JSONValue {
         let requested = params["protocolVersion"]?.stringValue ?? ""
         let version = Self.supportedVersions.contains(requested) ? requested : "2025-06-18"
-        let servers = visible(allowed).map(\.name).joined(separator: ", ")
+        var servers: [String] = []
+        for upstream in visible(allowed) {
+            let about = Self.summary(of: await upstream.handshake)
+            servers.append(about.map { "- \(upstream.name): \($0)" } ?? "- \(upstream.name)")
+        }
         return .object([
             "protocolVersion": .string(version),
             "capabilities": .object([
@@ -84,10 +88,22 @@ public actor Aggregator: MCPEndpoint {
             ]),
             "serverInfo": .object(["name": .string("porchlight"), "title": .string("Porchlight"), "version": .string("0.0.1")]),
             "instructions": .string(
-                "Porchlight combines MCP servers running on the user's computer (\(servers)). "
-                    + "Tool and prompt names are prefixed with their server: <server>__<name>."
+                "Porchlight combines MCP servers running on the user's computer. Tool and prompt names are "
+                    + "prefixed with their server: <server>__<name>. Pick tools from the server that fits the request.\n\n"
+                    + "Servers:\n" + servers.joined(separator: "\n")
             ),
         ])
+    }
+
+    /// What a server says it's for, in a line: the start of its instructions, else its
+    /// description or title. Nil for servers that haven't connected yet, or say nothing.
+    static func summary(of handshake: JSONValue?) -> String? {
+        let info = handshake?["serverInfo"]
+        let candidates = [handshake?["instructions"], info?["description"], info?["title"]].compactMap { $0?.stringValue }
+        guard let text = candidates.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { return nil }
+        let paragraph = text.components(separatedBy: "\n\n").first ?? text
+        let line = paragraph.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return line.count > 200 ? String(line.prefix(199)) + "…" : line
     }
 
     // MARK: Lists

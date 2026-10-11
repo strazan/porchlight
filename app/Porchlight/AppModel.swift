@@ -82,6 +82,12 @@ final class AppModel {
             pushClientAccess()
         }
     }
+    /// Bumped when what apps see may have changed (servers, permissions, access), so tool
+    /// counts reload.
+    private(set) var toolsRevision = 0
+    /// More tools than this in one connector, and Settings suggests trimming them.
+    static let manyTools = 40
+
     /// Tool calls waiting for the owner to allow or deny them, oldest first.
     private(set) var pendingApprovals: [ToolApprovalRequest] = []
     /// Recent requests, oldest first.
@@ -295,7 +301,16 @@ final class AppModel {
             await router.apply(servers)
             await router.warmUp()
             scheduleCatalogPush()
+            toolsRevision += 1
         }
+    }
+
+    /// How many tools an app sees in one connector (nil: one that may use every server).
+    /// Nil while Porchlight is off.
+    func toolCount(for clientID: String?) async -> Int? {
+        if isPreview { return clientID.flatMap { clientAccess[$0] } == nil ? 33 : 20 }
+        guard let router else { return nil }
+        return await router.toolCount(for: clientID ?? "")
     }
 
     // MARK: Running
@@ -524,6 +539,7 @@ final class AppModel {
         Task {
             await router.setClientAccess(access)
             scheduleCatalogPush()
+            toolsRevision += 1
         }
     }
 
@@ -616,6 +632,7 @@ final class AppModel {
         case .connected:
             log("Relay connected")
             scheduleCatalogPush()
+            toolsRevision += 1
         case .disconnected(let reason): log("Relay disconnected: \(reason)")
         }
     }
