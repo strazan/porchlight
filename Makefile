@@ -1,4 +1,4 @@
-.PHONY: test test-relay test-app build-cli app release snapshots dev relay-bundle
+.PHONY: site test test-relay test-app build-cli app release snapshots dev relay-bundle
 
 DERIVED_DATA := app/build
 
@@ -32,6 +32,10 @@ release:
 	@echo "→ $(DERIVED_DATA)/Build/Products/Release/Porchlight.app"
 
 # Renders every screen with sample data, in light and dark, for design review.
+# Publish the website (docs/) to porchlight.sh.
+site:
+	cd relay && npx wrangler deploy -c ../site/wrangler.jsonc
+
 snapshots:
 	xcodebuild -project app/Porchlight.xcodeproj -scheme Porchlight -configuration Debug -destination "generic/platform=macOS" \
 		-derivedDataPath $(DERIVED_DATA) -quiet build
