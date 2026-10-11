@@ -56,6 +56,14 @@ public struct ToolApprovalRequest: Sendable, Identifiable, Equatable {
     /// The tool's title, if it has one.
     public let title: String?
     public let arguments: JSONValue
+
+    public init(clientName: String, server: String, tool: String, title: String?, arguments: JSONValue) {
+        self.clientName = clientName
+        self.server = server
+        self.tool = tool
+        self.title = title
+        self.arguments = arguments
+    }
 }
 
 /// Who sent a request, as the relay identified them.
@@ -96,4 +104,14 @@ public struct ActivityEvent: Sendable, Identifiable {
     public let tool: String?
     public let duration: Duration
     public let outcome: Outcome
+
+    public init(date: Date, client: ClientIdentity, server: String?, method: String, tool: String?, duration: Duration, outcome: Outcome) {
+        self.date = date
+        self.client = client
+        self.server = server
+        self.method = method
+        self.tool = tool
+        self.duration = duration
+        self.outcome = outcome
+    }
 }

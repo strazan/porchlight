@@ -99,7 +99,7 @@ public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
 
     /// The command as one shell-style line, for display and editing.
     public var commandLineString: String {
-        get { commandLine.map(shellQuoted).joined(separator: " ") }
+        get { command.isEmpty && args.isEmpty ? "" : commandLine.map(shellQuoted).joined(separator: " ") }
         set {
             let parts = splitCommandLine(newValue)
             command = parts.first ?? ""

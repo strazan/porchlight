@@ -18,6 +18,7 @@ struct ServerEditor: View {
     @State private var nameEdited: Bool
     @State private var test: TestState = .idle
     @State private var editingTools = false
+    @State private var confirmingRemove = false
 
     struct Pair: Identifiable {
         let id = UUID()
@@ -50,105 +51,112 @@ struct ServerEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Form {
+            VStack(alignment: .leading, spacing: 14) {
+                SheetHeader(
+                    title: isNew ? "Add Server" : "Edit \(draft.name)",
+                    subtitle: draft.transport == .stdio
+                        ? "A command Porchlight runs on this Mac."
+                        : "A server that's already running on this Mac, like Obsidian's.",
+                    systemImage: draft.transport == .stdio ? "terminal" : "link"
+                )
                 Picker("Type", selection: $draft.transport) {
                     Text("Command").tag(ServerConfig.Transport.stdio)
                     Text("URL").tag(ServerConfig.Transport.http)
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
                 .onChange(of: draft.transport) { test = .idle }
+            }
+            .padding([.horizontal, .top], 20)
+            .padding(.bottom, 4)
 
+            Form {
                 Section {
                     if draft.transport == .stdio {
-                        TextField("Command", text: $commandLine, prompt: Text("npx -y @modelcontextprotocol/server-filesystem ~/Documents"))
+                        TextField("Command", text: $commandLine, prompt: Text("npx -y @modelcontextprotocol/server-filesystem ~/Documents"), axis: .vertical)
                             .font(.body.monospaced())
+                            .lineLimit(1...3)
+                            .labelsHidden()
                             .onChange(of: commandLine) { _, line in
                                 if !nameEdited { draft.name = ServerConfig.suggestedName(for: splitCommandLine(line)) }
+                                test = .idle
                             }
                     } else {
                         TextField("URL", text: $draft.url, prompt: Text("http://127.0.0.1:27123/mcp/"))
                             .font(.body.monospaced())
+                            .labelsHidden()
+                            .onChange(of: draft.url) { test = .idle }
+                        SecureField("API key", text: $apiKey, prompt: Text("Optional"))
+                            .onChange(of: apiKey) { test = .idle }
                     }
                     TextField("Name", text: Binding(get: { draft.name }, set: {
                         draft.name = $0
                         nameEdited = true
-                    }), prompt: Text(draft.transport == .stdio ? "filesystem" : "obsidian"))
+                    }), prompt: Text(draft.transport == .stdio ? "From the command" : "Required"))
+                } header: {
+                    Text(draft.transport == .stdio ? "Command" : "URL")
                 } footer: {
-                    Text(nameError ?? footer)
-                        .font(.caption)
-                        .foregroundStyle(nameError == nil ? Color.secondary : Color.red)
+                    if let nameError {
+                        Text(nameError).font(.caption).foregroundStyle(.red)
+                    } else {
+                        Footnote(draft.transport == .stdio
+                            ? "Runs with your login shell's PATH, so npx, uvx and Homebrew tools work. Its tools appear as \(shownName)__tool."
+                            : "The API key is sent as Authorization: Bearer <key>; pasting the whole header line works too. Its tools appear as \(shownName)__tool.")
+                    }
                 }
 
                 if draft.transport == .http {
-                    Section {
-                        SecureField("API key", text: $apiKey, prompt: Text("Paste the key"))
-                    } footer: {
-                        Text("Sent as Authorization: Bearer <key>. Paste just the key; a whole header line like \"Authorization\": \"Bearer …\" works too. Leave empty if the server doesn't need one.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    pairs(
-                        "Other Headers", $headers,
-                        namePrompt: "X-Api-Key", add: "Add Header",
-                        footer: "Only if the server needs headers besides the API key."
-                    )
+                    PairsSection(title: "Other Headers", items: $headers, namePrompt: "X-Api-Key", add: "Add Header", error: pairError)
                 } else {
-                    pairs(
-                        "Environment Variables", $env,
-                        namePrompt: "GITHUB_TOKEN", add: "Add Variable",
-                        footer: "Passed to the command, e.g. API keys it reads from the environment."
-                    )
+                    PairsSection(title: "Environment Variables", items: $env, namePrompt: "GITHUB_TOKEN", add: "Add Variable", error: pairError)
                 }
 
                 Section {
                     Picker("Tools", selection: $draft.toolPolicy.defaultPermission) {
                         ForEach(ToolPolicy.Default.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
-                    HStack {
-                        Text(overridesSummary).foregroundStyle(.secondary)
-                        Spacer()
+                    LabeledContent(overridesSummary) {
                         Button("Per-Tool Settings…") { editingTools = true }
-                            .disabled(!preview.isRunnable || headerError != nil)
+                            .disabled(!preview.isRunnable || pairError != nil)
                     }
+                    .foregroundStyle(.secondary)
                 } header: {
                     Text("Permissions")
                 } footer: {
-                    Text("Tools that make changes are those that don't declare themselves read-only. When Porchlight asks, you choose on your Mac: allow once, always allow, or deny.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section {
-                    Toggle("Enabled", isOn: $draft.enabled)
-                    HStack(alignment: .firstTextBaseline) {
-                        Button("Test Connection") { runTest() }
-                            .disabled(!preview.isRunnable || test == .running || headerError != nil)
-                        testResult
-                    }
+                    Footnote(draft.toolPolicy.defaultPermission.explanation)
                 }
             }
             .formStyle(.grouped)
 
-            HStack {
-                Spacer()
+            Divider()
+            HStack(spacing: 8) {
+                Button("Test Connection") { runTest() }
+                    .disabled(!preview.isRunnable || test == .running || pairError != nil)
+                testResult
+                Spacer(minLength: 8)
+                if !isNew {
+                    Button("Remove…", role: .destructive) { confirmingRemove = true }
+                }
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button(isNew ? "Add" : "Save") { save() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(nameError != nil || headerError != nil || draft.name.isEmpty || !preview.isRunnable)
+                    .disabled(nameError != nil || pairError != nil || draft.name.isEmpty || !preview.isRunnable)
             }
-            .padding()
+            .padding(16)
         }
-        .frame(width: 560, height: 640)
+        .frame(width: 560, height: 620)
         .sheet(isPresented: $editingTools) {
             ToolPermissionsView(config: preview, policy: $draft.toolPolicy)
         }
-    }
-
-    private var overridesSummary: String {
-        let overrides = draft.toolPolicy.overrides
-        if overrides.isEmpty { return "No per-tool exceptions" }
-        return overrides.count == 1 ? "1 tool set individually" : "\(overrides.count) tools set individually"
+        .confirmationDialog("Remove \(draft.name)?", isPresented: $confirmingRemove) {
+            Button("Remove", role: .destructive) {
+                model.remove([draft.id])
+                dismiss()
+            }
+        } message: {
+            Text("Apps lose access to its tools right away.")
+        }
     }
 
     @ViewBuilder private var testResult: some View {
@@ -156,54 +164,24 @@ struct ServerEditor: View {
         case .idle: EmptyView()
         case .running: ProgressView().controlSize(.small)
         case .passed(let summary):
-            Label(summary, systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            Label(summary, systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .lineLimit(1)
         case .failed(let message):
             Label(message, systemImage: "xmark.circle.fill")
                 .foregroundStyle(.red)
+                .lineLimit(2)
+                .help(message)
                 .textSelection(.enabled)
         }
     }
 
-    private var footer: String {
-        switch draft.transport {
-        case .stdio:
-            "Runs with your login shell's PATH, so npx, uvx and Homebrew tools work. The name is used in this server's URL and to prefix its tools."
-        case .http:
-            "A server that's already running on this Mac, like Obsidian's. The name is used in this server's URL and to prefix its tools."
-        }
-    }
+    private var shownName: String { draft.name.isEmpty ? "name" : draft.name }
 
-    private func pairs(_ title: String, _ items: Binding<[Pair]>, namePrompt: String, add: String, footer: String) -> some View {
-        Section {
-            ForEach(items) { $item in
-                HStack(alignment: .firstTextBaseline) {
-                    TextField("Name", text: $item.name, prompt: Text(namePrompt))
-                        .font(.body.monospaced())
-                        .onChange(of: item.name) { _, name in
-                            // A pasted "Name: value" line goes into both fields.
-                            if !ServerConfig.isValidHeaderName(name), let header = ServerConfig.parseHeader(name) {
-                                item.name = header.name
-                                if item.value.isEmpty { item.value = header.value }
-                            }
-                        }
-                    SecureField("Value", text: $item.value, prompt: Text("value"))
-                    Button {
-                        items.wrappedValue.removeAll { $0.id == item.id }
-                    } label: {
-                        Image(systemName: "minus.circle")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Remove")
-                }
-            }
-            Button(add) { items.wrappedValue.append(Pair(name: "", value: "")) }
-        } header: {
-            Text(title)
-        } footer: {
-            Text(headerError ?? footer)
-                .font(.caption)
-                .foregroundStyle(headerError == nil ? Color.secondary : Color.red)
-        }
+    private var overridesSummary: String {
+        let overrides = draft.toolPolicy.overrides
+        if overrides.isEmpty { return "No exceptions" }
+        return overrides.count == 1 ? "1 tool set individually" : "\(overrides.count) tools set individually"
     }
 
     private var nameError: String? {
@@ -215,7 +193,7 @@ struct ServerEditor: View {
         return nil
     }
 
-    private var headerError: String? {
+    private var pairError: String? {
         let names = (draft.transport == .http ? headers : env).map(\.name).filter { !$0.isEmpty }
         if let bad = names.first(where: { !ServerConfig.isValidHeaderName($0) }) {
             return "“\(bad)” isn't a valid name: use letters, digits and hyphens, without spaces or colons."
@@ -252,9 +230,9 @@ struct ServerEditor: View {
         Task {
             switch await model.probe(config) {
             case .success(let found):
-                test = .passed("Connected to \(found.serverName) · \(found.toolCount) tool\(found.toolCount == 1 ? "" : "s")")
+                test = .passed("\(found.serverName) · \(found.toolCount) tool\(found.toolCount == 1 ? "" : "s")")
             case .failure(let error):
-                test = .failed(error.message)
+                test = .failed(UpstreamStatus.explain(error.message))
             }
         }
     }
@@ -263,5 +241,98 @@ struct ServerEditor: View {
         guard !draft.name.isEmpty else { return }
         if isNew { model.add(preview) } else { model.update(preview) }
         dismiss()
+    }
+}
+
+/// Name/value rows (environment variables or headers) with column headings.
+private struct PairsSection: View {
+    let title: String
+    @Binding var items: [ServerEditor.Pair]
+    let namePrompt: String
+    let add: String
+    let error: String?
+
+    var body: some View {
+        Section {
+            if !items.isEmpty {
+                Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
+                    GridRow {
+                        Text("Name")
+                        Text("Value")
+                        Color.clear.frame(width: 16, height: 1)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    ForEach($items) { $item in
+                        GridRow {
+                            TextField("Name", text: $item.name, prompt: Text(namePrompt))
+                                .font(.body.monospaced())
+                                .onChange(of: item.name) { _, name in
+                                    // A pasted "Name: value" line goes into both fields.
+                                    if !ServerConfig.isValidHeaderName(name), let header = ServerConfig.parseHeader(name) {
+                                        item.name = header.name
+                                        if item.value.isEmpty { item.value = header.value }
+                                    }
+                                }
+                            SecureField("Value", text: $item.value, prompt: Text("value"))
+                            Button {
+                                items.removeAll { $0.id == item.id }
+                            } label: {
+                                Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Remove")
+                        }
+                        .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                    }
+                }
+            }
+            Button {
+                items.append(ServerEditor.Pair(name: "", value: ""))
+            } label: {
+                Label(add, systemImage: "plus")
+            }
+            .buttonStyle(.borderless)
+        } header: {
+            Text(title)
+        } footer: {
+            if let error {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+        }
+    }
+}
+
+private struct Footnote: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+extension ToolPolicy.Default {
+    var title: String {
+        switch self {
+        case .allowAll: "Always allow"
+        case .askForChanges: "Ask before changes"
+        case .askAll: "Always ask"
+        }
+    }
+
+    var explanation: String {
+        switch self {
+        case .allowAll: "Apps can run any of its tools without asking."
+        case .askForChanges: "Read-only tools run right away. Anything else asks on this Mac first."
+        case .askAll: "Every tool call asks on this Mac first."
+        }
     }
 }

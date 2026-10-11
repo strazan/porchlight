@@ -1,8 +1,21 @@
+import PorchlightCore
 import SwiftUI
 
 @main
 struct PorchlightApp: App {
-    @State private var model = AppModel()
+    @State private var model: AppModel
+
+    init() {
+        #if DEBUG
+        if let directory = Snapshots.requestedDirectory {
+            // Render the design snapshots instead of running (and touch nothing real).
+            _model = State(initialValue: AppModel(defaults: UserDefaults(suiteName: "porchlight.snapshots")!, store: ServerStore(url: URL(fileURLWithPath: "/dev/null")), preview: true))
+            DispatchQueue.main.async { Snapshots.run(into: directory) }
+            return
+        }
+        #endif
+        _model = State(initialValue: AppModel())
+    }
 
     var body: some Scene {
         MenuBarExtra {
@@ -17,12 +30,8 @@ struct PorchlightApp: App {
         }
         .windowResizability(.contentSize)
 
-        Window("Porchlight Activity", id: "activity") {
+        Window("Activity", id: "activity") {
             ActivityView().environment(model)
-        }
-
-        Window("Porchlight Logs", id: "logs") {
-            LogsView().environment(model)
         }
     }
 

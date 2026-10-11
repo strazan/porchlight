@@ -20,7 +20,7 @@ final class AppModel {
     }
 
     var relayURL: String { didSet { defaults.set(relayURL, forKey: "relayURL") } }
-    var secret: String { didSet { Keychain.write("agentSecret", secret) } }
+    var secret: String { didSet { if !isPreview { Keychain.write("agentSecret", secret) } } }
     var keepAwake: Bool {
         didSet {
             defaults.set(keepAwake, forKey: "keepAwake")
@@ -69,8 +69,12 @@ final class AppModel {
     /// Recent requests, oldest first.
     private(set) var activity: [ActivityEvent] = []
 
-    @ObservationIgnored private let defaults = UserDefaults.standard
-    @ObservationIgnored private let store = ServerStore.standard
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let store: ServerStore
+    /// Sample data for snapshots and previews: no Keychain, relay or network.
+    @ObservationIgnored let isPreview: Bool
+    @ObservationIgnored var previewProbe: Result<Router.ProbeResult, Router.ProbeError>?
+    @ObservationIgnored var previewImportCandidates: [ImportCandidate] = []
     @ObservationIgnored private var runner: Task<Void, Never>?
     @ObservationIgnored private var router: Router?
     @ObservationIgnored private var shellEnvironment: [String: String]?
@@ -87,9 +91,12 @@ final class AppModel {
     @ObservationIgnored private var nextLogID = 0
     private static let maxLogLines = 2000
 
-    init() {
+    init(defaults: UserDefaults = .standard, store: ServerStore = .standard, preview: Bool = false) {
+        self.defaults = defaults
+        self.store = store
+        isPreview = preview
         relayURL = defaults.string(forKey: "relayURL") ?? "http://localhost:8787"
-        secret = Keychain.read("agentSecret") ?? ""
+        secret = preview ? "" : Keychain.read("agentSecret") ?? ""
         keepAwake = defaults.bool(forKey: "keepAwake")
         clientAccess = (defaults.dictionary(forKey: "clientAccess") as? [String: [String]] ?? [:]).mapValues(Set.init)
         deployment = defaults.data(forKey: "deployment").flatMap { try? JSONDecoder().decode(Deployment.self, from: $0) }
@@ -100,6 +107,7 @@ final class AppModel {
             servers = repaired
             try? store.save(servers)
         }
+        guard !preview else { return }
         connectivity = ConnectivityWatcher { [weak self] in self?.connectivityChanged() }
         if isConfigured { Task { await start() } }
     }
@@ -121,12 +129,16 @@ final class AppModel {
     // MARK: Derived state
 
     var isConfigured: Bool { !secret.isEmpty && agentURL != nil }
+    /// Set up enough to show the connector and servers, rather than the getting-started steps.
+    var isSetUp: Bool { isConfigured }
+    /// Settings opens on this tab next (e.g. "Set Up Porchlight…" opens the Relay tab).
+    var requestedSettingsTab: SettingsView.Tab?
     var isOn: Bool { state != .off }
     var isConnected: Bool { state == .relay(.connected) }
 
     var statusText: String {
         switch state {
-        case .off: "Off"
+        case .off: isConfigured ? "Off" : "Not set up yet"
         case .starting, .relay(.connecting): "Connecting…"
         case .relay(.connected): "Connected"
         case .relay(.disconnected(let reason)): reason
@@ -207,8 +219,19 @@ final class AppModel {
 
     /// Tries a config the way a client would, for the editor's Test Connection.
     func probe(_ config: ServerConfig) async -> Result<Router.ProbeResult, Router.ProbeError> {
+        if let previewProbe { return previewProbe }
         if shellEnvironment == nil, config.transport == .stdio { shellEnvironment = await ShellEnvironment.resolve() }
         return await Router.probe(config, environment: shellEnvironment ?? ProcessInfo.processInfo.environment)
+    }
+
+    /// Servers configured in Claude Desktop, Claude Code and Cursor.
+    func importCandidates() -> [ImportCandidate] {
+        isPreview ? previewImportCandidates : ConfigImporter.candidates()
+    }
+
+    /// The Cloudflare token saved by an earlier deploy.
+    func savedCloudflareToken() -> String {
+        isPreview ? "" : Keychain.read("cloudflareToken") ?? ""
     }
 
     /// True if a server with the same command is already in the list.
@@ -473,4 +496,99 @@ final class AppModel {
         nextLogID += 1
         if logs.count > Self.maxLogLines { logs.removeFirst(logs.count - Self.maxLogLines) }
     }
+
+    // MARK: Sample data
+
+    #if DEBUG
+    enum SampleScenario {
+        /// Connected, with servers, apps and activity.
+        case everything
+        /// Nothing set up yet.
+        case firstRun
+        case waitingForToolApproval
+        case waitingForPairing
+        /// Set up, but turned off.
+        case switchedOff
+    }
+
+    func loadSampleData(_ scenario: SampleScenario) {
+        precondition(isPreview, "sample data is only for previews")
+        guard scenario != .firstRun else { return }
+        relayURL = "https://porchlight-relay.sigge.workers.dev"
+        secret = "sample-secret"
+        state = .relay(.connected)
+        deployment = Deployment(accountID: "a1", accountName: "Sigge's Account", scriptName: "porchlight-relay", relaySHA: bundledRelay?.sha256 ?? "")
+
+        var obsidian = ServerConfig(name: "obsidian", url: "http://127.0.0.1:27123/mcp/", headers: ["Authorization": "Bearer 0123456789abcdef"])
+        obsidian.toolPolicy.overrides = ["search": .allow, "delete_note": .deny]
+        servers = [
+            obsidian,
+            ServerConfig(name: "filesystem", command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/you/Documents"]),
+            ServerConfig(name: "github", command: "docker", args: ["run", "-i", "--rm", "ghcr.io/github/github-mcp-server"], env: ["GITHUB_TOKEN": "x"]),
+            ServerConfig(name: "playwright", command: "npx", args: ["@playwright/mcp@latest"], enabled: false),
+        ]
+        serverStatus = ["obsidian": .running, "filesystem": .running, "github": .failed("Exited with status 125")]
+
+        let now = Date()
+        clients = [
+            PairedClient(id: "g1", clientID: "https://claude.ai/oauth/mcp-oauth-client-metadata", clientName: "Claude", clientDomain: "claude.ai", createdAt: now.addingTimeInterval(-3 * 86400)),
+            PairedClient(id: "g2", clientID: "dcr-7f3a", clientName: "ChatGPT", clientDomain: nil, createdAt: now.addingTimeInterval(-2 * 3600)),
+        ]
+        clientAccess = ["dcr-7f3a": ["obsidian"]]
+
+        let claude = ClientIdentity(id: "https://claude.ai/oauth/mcp-oauth-client-metadata", name: "Claude")
+        let chatgpt = ClientIdentity(id: "dcr-7f3a", name: "ChatGPT")
+        activity = [
+            ActivityEvent(date: now.addingTimeInterval(-600), client: claude, server: nil, method: "tools/list", tool: nil, duration: .milliseconds(184), outcome: .ok),
+            ActivityEvent(date: now.addingTimeInterval(-540), client: claude, server: "obsidian", method: "tools/call", tool: "search", duration: .milliseconds(92), outcome: .ok),
+            ActivityEvent(date: now.addingTimeInterval(-500), client: claude, server: "filesystem", method: "tools/call", tool: "read_text_file", duration: .milliseconds(31), outcome: .ok),
+            ActivityEvent(date: now.addingTimeInterval(-420), client: claude, server: "filesystem", method: "tools/call", tool: "write_file", duration: .seconds(6), outcome: .denied("The user declined this call to write_file on their Mac.")),
+            ActivityEvent(date: now.addingTimeInterval(-300), client: chatgpt, server: "obsidian", method: "tools/call", tool: "get_note", duration: .milliseconds(140), outcome: .ok),
+            ActivityEvent(date: now.addingTimeInterval(-120), client: claude, server: "github", method: "tools/call", tool: "list_issues", duration: .milliseconds(12), outcome: .error("Could not start github: Exited with status 125")),
+        ]
+        for (index, line) in [
+            (nil, "Connecting to https://porchlight-relay.sigge.workers.dev"),
+            (nil, "Relay connected"),
+            ("obsidian", "connected to http://127.0.0.1:27123/mcp/"),
+            ("filesystem", "started: npx -y @modelcontextprotocol/server-filesystem /Users/you/Documents"),
+            ("filesystem", "Secure MCP Filesystem Server running on stdio"),
+            ("github", "started: docker run -i --rm ghcr.io/github/github-mcp-server"),
+            ("github", "docker: Cannot connect to the Docker daemon. Is the docker daemon running?"),
+        ].enumerated() {
+            logs.append(LogLine(id: index, date: now.addingTimeInterval(Double(index - 20)), server: line.0, text: line.1))
+        }
+
+        previewProbe = .success(Router.ProbeResult(serverName: "obsidian-local-rest-api", tools: [
+            .init(name: "search", title: "Search notes", description: "Full-text search across the vault.", readOnly: true, destructive: false),
+            .init(name: "get_note", title: "Read a note", description: nil, readOnly: true, destructive: false),
+            .init(name: "append_to_note", title: "Append to a note", description: "Adds text to the end of a note.", readOnly: false, destructive: false),
+            .init(name: "delete_note", title: "Delete a note", description: "Moves a note to the trash.", readOnly: false, destructive: true),
+        ]))
+        previewImportCandidates = [
+            ImportCandidate(source: .claudeDesktop, scope: nil, originalName: "filesystem", config: servers[1], unsupportedReason: nil),
+            ImportCandidate(source: .claudeDesktop, scope: nil, originalName: "memory", config: ServerConfig(name: "memory", command: "npx", args: ["-y", "@modelcontextprotocol/server-memory"]), unsupportedReason: nil),
+            ImportCandidate(source: .claudeCode, scope: nil, originalName: "linear", config: nil, unsupportedReason: "Remote server: add it to your AI app directly"),
+            ImportCandidate(source: .claudeCode, scope: "/Users/you/code/porchlight", originalName: "sqlite", config: ServerConfig(name: "sqlite", command: "uvx", args: ["mcp-server-sqlite", "--db-path", "dev.db"]), unsupportedReason: nil),
+            ImportCandidate(source: .cursor, scope: nil, originalName: "obsidian", config: obsidian, unsupportedReason: nil),
+        ]
+
+        switch scenario {
+        case .waitingForToolApproval:
+            pendingApprovals = [ToolApprovalRequest(
+                clientName: "Claude", server: "filesystem", tool: "write_file", title: "Write File",
+                arguments: .object(["path": .string("/Users/you/Documents/notes/todo.md"), "content": .string("- [ ] Ship Porchlight\n- [ ] Write the README")])
+            )]
+        case .switchedOff:
+            state = .off
+            serverStatus = [:]
+        case .waitingForPairing:
+            pendingPairings = [PairingRequest(
+                id: "p1", code: "482913", clientID: "https://chatgpt.com/oauth/client", clientName: "ChatGPT",
+                clientDomain: "chatgpt.com", redirectHost: "chatgpt.com", loopback: false
+            )]
+        default:
+            break
+        }
+    }
+    #endif
 }

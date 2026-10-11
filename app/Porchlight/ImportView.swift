@@ -10,6 +10,12 @@ struct ImportView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            SheetHeader(
+                title: "Import Servers",
+                subtitle: "Servers you've set up in Claude Desktop, Claude Code and Cursor.",
+                systemImage: "square.and.arrow.down"
+            )
+            .padding(20)
             if candidates.isEmpty {
                 ContentUnavailableView(
                     "Nothing to Import",
@@ -43,7 +49,7 @@ struct ImportView: View {
             }
             .padding()
         }
-        .frame(width: 560, height: 440)
+        .frame(width: 560, height: 480)
         .onAppear(perform: load)
     }
 
@@ -77,7 +83,7 @@ struct ImportView: View {
     }
 
     private func load() {
-        candidates = ConfigImporter.candidates()
+        candidates = model.importCandidates()
         // Preselect everything new, once per distinct command (the same server is often
         // configured in several apps).
         var seen: [ServerConfig] = []

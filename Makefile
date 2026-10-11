@@ -1,4 +1,4 @@
-.PHONY: test test-relay test-app build-cli app release dev relay-bundle
+.PHONY: test test-relay test-app build-cli app release snapshots dev relay-bundle
 
 DERIVED_DATA := app/build
 
@@ -30,6 +30,14 @@ release:
 		-derivedDataPath $(DERIVED_DATA) -quiet build
 	@codesign -dv $(DERIVED_DATA)/Build/Products/Release/Porchlight.app 2>&1 | grep -E "Authority=Developer|Signature=adhoc" || true
 	@echo "→ $(DERIVED_DATA)/Build/Products/Release/Porchlight.app"
+
+# Renders every screen with sample data, in light and dark, for design review.
+snapshots:
+	xcodebuild -project app/Porchlight.xcodeproj -scheme Porchlight -configuration Debug -destination "generic/platform=macOS" \
+		-derivedDataPath $(DERIVED_DATA) -quiet build
+	rm -rf $(DERIVED_DATA)/snapshots
+	PORCHLIGHT_SNAPSHOTS=$(CURDIR)/$(DERIVED_DATA)/snapshots $(DERIVED_DATA)/Build/Products/Debug/Porchlight.app/Contents/MacOS/Porchlight
+	@echo "→ $(DERIVED_DATA)/snapshots"
 
 dev:
 	cd relay && npx wrangler dev

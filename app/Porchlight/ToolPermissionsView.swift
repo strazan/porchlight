@@ -12,11 +12,13 @@ struct ToolPermissionsView: View {
     @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Tools on \(config.name)").font(.title3.weight(.semibold))
-            Text("“Default” follows the server's setting: \(policy.defaultPermission.title.lowercased()).")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            SheetHeader(
+                title: "Tools on \(config.name)",
+                subtitle: "Tools left on Default follow the server's setting: \(policy.defaultPermission.title.lowercased()).",
+                systemImage: "checklist"
+            )
+            .padding(20)
 
             Group {
                 if let tools {
@@ -24,27 +26,35 @@ struct ToolPermissionsView: View {
                         ContentUnavailableView("No Tools", systemImage: "wrench.and.screwdriver", description: Text("This server doesn't offer any tools."))
                     } else {
                         List(tools) { tool in row(tool) }
+                            .listStyle(.inset)
                     }
                 } else if let error {
-                    ContentUnavailableView("Couldn't Load Tools", systemImage: "exclamationmark.triangle", description: Text(error))
+                    ContentUnavailableView("Couldn't Load Tools", systemImage: "exclamationmark.triangle", description: Text(UpstreamStatus.explain(error)))
                 } else {
-                    ProgressView("Asking the server for its tools…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ProgressView("Asking \(config.name) for its tools…")
                 }
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            Divider()
             HStack {
+                Text(summary).font(.callout).foregroundStyle(.secondary)
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
+            .padding(16)
         }
-        .padding(20)
-        .frame(width: 560, height: 480)
+        .frame(width: 580, height: 500)
         .task { await load() }
     }
 
+    private var summary: String {
+        let count = policy.overrides.count
+        return count == 0 ? "All tools on Default" : count == 1 ? "1 tool set individually" : "\(count) tools set individually"
+    }
+
     private func row(_ tool: Router.ToolSummary) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(tool.title ?? tool.name).font(.body.weight(.medium))
@@ -58,15 +68,18 @@ struct ToolPermissionsView: View {
                     Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
-            Spacer()
-            Picker("", selection: binding(for: tool)) {
+            Spacer(minLength: 12)
+            Picker("Permission", selection: binding(for: tool)) {
                 Text("Default (\(policy.defaultPermission(readOnly: tool.readOnly).title))").tag(ToolPermission?.none)
+                Divider()
                 ForEach(ToolPermission.allCases, id: \.self) { Text($0.title).tag(ToolPermission?.some($0)) }
             }
             .labelsHidden()
-            .frame(width: 150)
+            .pickerStyle(.menu)
+            .fixedSize()
+            .frame(width: 170, alignment: .trailing)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 
     private func binding(for tool: Router.ToolSummary) -> Binding<ToolPermission?> {
@@ -84,36 +97,12 @@ struct ToolPermissionsView: View {
     }
 }
 
-private struct Badge: View {
-    let text: String
-    let color: Color
-
-    var body: some View {
-        Text(text)
-            .font(.caption2.weight(.medium))
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .foregroundStyle(color)
-            .background(color.opacity(0.12), in: Capsule())
-    }
-}
-
 extension ToolPermission {
     var title: String {
         switch self {
         case .allow: "Allow"
         case .ask: "Ask"
         case .deny: "Block"
-        }
-    }
-}
-
-extension ToolPolicy.Default {
-    var title: String {
-        switch self {
-        case .allowAll: "Run tools without asking"
-        case .askForChanges: "Ask before tools that make changes"
-        case .askAll: "Ask before every tool"
         }
     }
 }

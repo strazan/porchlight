@@ -104,6 +104,14 @@ public struct PairedClient: Sendable, Identifiable, Equatable {
     public let clientName: String
     public let clientDomain: String?
     public let createdAt: Date
+
+    public init(id: String, clientID: String, clientName: String, clientDomain: String?, createdAt: Date) {
+        self.id = id
+        self.clientID = clientID
+        self.clientName = clientName
+        self.clientDomain = clientDomain
+        self.createdAt = createdAt
+    }
 }
 
 /// Things the relay tells the host, other than tunneled requests.

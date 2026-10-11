@@ -29,14 +29,10 @@ struct LogsView: View {
                 if let last { proxy.scrollTo(last, anchor: .bottom) }
             }
         }
-        .toolbar {
-            Button("Copy") {
-                let text = model.logs.map { "[\($0.server ?? "porchlight")] \($0.text)" }.joined(separator: "\n")
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
+        .overlay {
+            if model.logs.isEmpty {
+                ContentUnavailableView("No Logs Yet", systemImage: "text.alignleft", description: Text("What your servers print shows up here."))
             }
-            Button("Clear") { model.clearLogs() }
         }
-        .frame(minWidth: 640, minHeight: 320)
     }
 }

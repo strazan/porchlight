@@ -2,14 +2,66 @@ import PorchlightCore
 import SwiftUI
 
 struct SettingsView: View {
+    enum Tab: Hashable, CaseIterable {
+        case servers, apps, relay, general
+    }
+
+    @Environment(AppModel.self) private var model
+    @State private var tab: Tab
+
+    init(tab: Tab = .servers) {
+        _tab = State(initialValue: tab)
+    }
+
     var body: some View {
-        TabView {
-            ServersTab().tabItem { Label("Servers", systemImage: "server.rack") }
-            ClientsTab().tabItem { Label("Apps", systemImage: "app.connected.to.app.below.fill") }
-            RelayTab().tabItem { Label("Relay", systemImage: "network") }
-            GeneralTab().tabItem { Label("General", systemImage: "gearshape") }
+        TabView(selection: $tab) {
+            ServersTab().tabItem { Label("Servers", systemImage: "server.rack") }.tag(Tab.servers)
+            ClientsTab().tabItem { Label("Apps", systemImage: "person.2") }.tag(Tab.apps)
+            RelayTab().tabItem { Label("Relay", systemImage: "network") }.tag(Tab.relay)
+            GeneralTab().tabItem { Label("General", systemImage: "gearshape") }.tag(Tab.general)
         }
-        .frame(width: 600, height: 460)
+        .frame(width: 620, height: 480)
+        .onAppear(perform: openRequestedTab)
+        .onChange(of: model.requestedSettingsTab) { openRequestedTab() }
+    }
+
+    private func openRequestedTab() {
+        if let requested = model.requestedSettingsTab {
+            tab = requested
+            model.requestedSettingsTab = nil
+        }
+    }
+}
+
+/// A list in a bordered box with a bar attached underneath, as in System Settings.
+private struct ListBox<Content: View, Bar: View>: View {
+    @ViewBuilder var content: Content
+    @ViewBuilder var bar: Bar
+
+    var body: some View {
+        VStack(spacing: 0) {
+            content
+            Divider()
+            bar
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(nsColor: .separatorColor)))
+    }
+}
+
+private struct Footnote: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -22,48 +74,52 @@ private struct ServersTab: View {
     @State private var importing = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            if model.servers.isEmpty {
-                ContentUnavailableView {
-                    Label("No Servers", systemImage: "server.rack")
-                } description: {
-                    Text("Add a local MCP server, or import the ones you already use in Claude Desktop, Claude Code or Cursor.")
-                } actions: {
-                    Button("Import…") { importing = true }
-                    Button("Add Server…") { editing = newServer() }
+        VStack(alignment: .leading, spacing: 10) {
+            ListBox {
+                if model.servers.isEmpty {
+                    ContentUnavailableView {
+                        Label("No Servers Yet", systemImage: "server.rack")
+                    } description: {
+                        Text("Add an MCP server that runs on this Mac, or import the ones you use in Claude Desktop, Claude Code or Cursor.")
+                    } actions: {
+                        Button("Import…") { importing = true }
+                        Button("Add Server…") { editing = newServer() }
+                            .buttonStyle(.borderedProminent)
+                    }
+                    .frame(maxHeight: .infinity)
+                } else {
+                    List(selection: $selection) {
+                        ForEach(model.servers) { server in
+                            ServerRow(server: server) { editing = server }
+                                .tag(server.id)
+                        }
+                    }
+                    .listStyle(.inset)
+                    .scrollContentBackground(.hidden)
+                    .contextMenu(forSelectionType: ServerConfig.ID.self) { ids in
+                        if ids.count == 1, let server = server(ids.first) {
+                            Button("Edit…") { editing = server }
+                            Divider()
+                        }
+                        Button("Remove", role: .destructive) { model.remove(ids) }
+                    } primaryAction: { ids in
+                        if let server = server(ids.first) { editing = server }
+                    }
+                    .onDeleteCommand { model.remove(selection) }
                 }
-            } else {
-                List(selection: $selection) {
-                    ForEach(model.servers) { server in
-                        ServerRow(server: server).tag(server.id)
+            } bar: {
+                ListBar(add: { editing = newServer() }, remove: { model.remove(selection) }, canRemove: !selection.isEmpty) {
+                    if !model.servers.isEmpty {
+                        Button("Import…") { importing = true }
+                            .padding(.trailing, 6)
                     }
                 }
-                .contextMenu(forSelectionType: ServerConfig.ID.self) { ids in
-                    if ids.count == 1, let server = server(ids.first) {
-                        Button("Edit…") { editing = server }
-                    }
-                    Button("Delete", role: .destructive) { model.remove(ids) }
-                } primaryAction: { ids in
-                    if let server = server(ids.first) { editing = server }
-                }
-                .onDeleteCommand { model.remove(selection) }
             }
-
-            Divider()
-            HStack(spacing: 4) {
-                Button { editing = newServer() } label: { Image(systemName: "plus") }
-                    .help("Add a server")
-                Button { model.remove(selection) } label: { Image(systemName: "minus") }
-                    .help("Remove the selected servers")
-                    .disabled(selection.isEmpty)
-                Button("Edit…") { editing = server(selection.first) }
-                    .disabled(selection.count != 1)
-                Spacer()
-                Button("Import…") { importing = true }
+            if !model.servers.isEmpty {
+                Footnote("Cloud apps see each server's tools as server__tool. Double-click a server to edit it.")
             }
-            .buttonStyle(.borderless)
-            .padding(8)
         }
+        .padding(20)
         .sheet(item: $editing) { server in
             ServerEditor(server: server, isNew: !model.servers.contains { $0.id == server.id })
         }
@@ -82,29 +138,40 @@ private struct ServersTab: View {
 private struct ServerRow: View {
     @Environment(AppModel.self) private var model
     let server: ServerConfig
+    let edit: () -> Void
 
     var body: some View {
-        let status = model.status(of: server)
+        let status = server.enabled ? model.status(of: server) : .idle
         HStack(spacing: 10) {
-            StatusDot(status: server.enabled ? status : .idle)
+            StatusDot(status: status)
             VStack(alignment: .leading, spacing: 2) {
-                Text(server.name).font(.body.weight(.medium))
+                HStack(spacing: 6) {
+                    Text(server.name).font(.body.weight(.medium))
+                    if server.transport == .http { Badge(text: "URL", color: .secondary) }
+                }
                 Text(server.summary)
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if server.enabled, case .failed(let reason) = status {
-                    Text(reason).font(.caption).foregroundStyle(.red)
+                if let problem = status.problem {
+                    Label(problem, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
                 }
             }
-            Spacer()
-            Toggle("", isOn: Binding(get: { server.enabled }, set: { model.setEnabled($0, for: server) }))
+            Spacer(minLength: 8)
+            Button(action: edit) { Image(systemName: "info.circle") }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("Edit \(server.name)")
+            Toggle("Enabled", isOn: Binding(get: { server.enabled }, set: { model.setEnabled($0, for: server) }))
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .labelsHidden()
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
     }
 }
 
@@ -115,68 +182,57 @@ private struct ClientsTab: View {
     @State private var revoking: PairedClient?
     @State private var editingAccess: PairedClient?
 
-    private func accessSummary(_ client: PairedClient) -> String {
-        guard let servers = model.access(for: client.clientID) else { return "Access: all servers" }
-        return servers.isEmpty ? "Access: no servers" : "Access: \(servers.sorted().joined(separator: ", "))"
-    }
-
     var body: some View {
-        Group {
-            if !model.isConnected {
-                ContentUnavailableView(
-                    "Not Connected",
-                    systemImage: "network.slash",
-                    description: Text("Connect to your relay to see which apps have access.")
-                )
-            } else if model.clients.isEmpty {
-                ContentUnavailableView {
-                    Label("No Connected Apps", systemImage: "app.connected.to.app.below.fill")
-                } description: {
-                    Text("Add \(model.endpoint) as a custom connector in Claude, ChatGPT or another MCP client. You'll approve it here.")
-                } actions: {
-                    CopyButton(text: model.endpoint, help: "Copy the URL")
-                }
-            } else {
-                List(model.clients) { client in
-                    HStack(spacing: 10) {
-                        Image(systemName: "app.connected.to.app.below.fill")
-                            .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(client.clientName).font(.body.weight(.medium))
-                            Text(client.clientDomain ?? client.clientID)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Text("Connected \(client.createdAt, format: .relative(presentation: .named))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(accessSummary(client))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            ListBox {
+                Group {
+                    if !model.isConnected {
+                        ContentUnavailableView(
+                            "Not Connected",
+                            systemImage: "network.slash",
+                            description: Text("Turn Porchlight on to see which apps have access.")
+                        )
+                    } else if model.clients.isEmpty {
+                        ContentUnavailableView {
+                            Label("No Apps Yet", systemImage: "person.2")
+                        } description: {
+                            Text("Add the connector URL as a custom connector in Claude, ChatGPT or another MCP client. You'll approve it on this Mac.")
+                        } actions: {
+                            CopyButton(text: model.endpoint, label: "Copy Connector URL")
                         }
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Button("Access…") { editingAccess = client }
-                            Button("Revoke…") { revoking = client }
+                    } else {
+                        List(model.clients) { client in
+                            ClientRow(client: client, access: model.access(for: client.clientID)) {
+                                editingAccess = client
+                            } revoke: {
+                                revoking = client
+                            }
                         }
+                        .listStyle(.inset)
+                        .scrollContentBackground(.hidden)
                     }
-                    .padding(.vertical, 3)
                 }
-            }
-        }
-        .sheet(item: $editingAccess) { client in AccessEditor(client: client) }
-        .safeAreaInset(edge: .bottom) {
-            if model.isConnected {
+                .frame(maxHeight: .infinity)
+            } bar: {
                 HStack {
+                    Text(model.clients.count == 1 ? "1 app" : "\(model.clients.count) apps")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 8)
                     Spacer()
-                    Button("Refresh") { model.refreshClients() }
+                    Button { model.refreshClients() } label: { Image(systemName: "arrow.clockwise").frame(width: 24, height: 20) }
+                        .buttonStyle(.borderless)
+                        .help("Refresh")
+                        .disabled(!model.isConnected)
                 }
-                .buttonStyle(.borderless)
-                .padding(8)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
             }
+            Footnote("Apps reach your servers through the relay after you approve them. Revoking an app stops it right away.")
         }
+        .padding(20)
         .onAppear { model.refreshClients() }
+        .sheet(item: $editingAccess) { client in AccessEditor(client: client) }
         .confirmationDialog(
             "Revoke access for \(revoking?.clientName ?? "this app")?",
             isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
@@ -189,17 +245,82 @@ private struct ClientsTab: View {
     }
 }
 
-private struct AccessEditor: View {
+private struct ClientRow: View {
+    let client: PairedClient
+    let access: Set<String>?
+    let changeAccess: () -> Void
+    let revoke: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            AppAvatar(name: client.clientName, size: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(client.clientName).font(.body.weight(.medium))
+                    if client.clientDomain != nil {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                            .help("Its name is verified")
+                    }
+                }
+                Text(details)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(accessSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Menu {
+                Button("Change Access…", action: changeAccess)
+                Divider()
+                Button("Revoke…", role: .destructive, action: revoke)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Access and revoke")
+        }
+        .padding(.vertical, 4)
+        .contextMenu {
+            Button("Change Access…", action: changeAccess)
+            Button("Revoke…", role: .destructive, action: revoke)
+        }
+    }
+
+    private var details: String {
+        let origin = client.clientDomain ?? "Unverified name"
+        return "\(origin) · connected \(client.createdAt.formatted(.relative(presentation: .named)))"
+    }
+
+    private var accessSummary: String {
+        guard let access else { return "Can use all servers" }
+        if access.isEmpty { return "Can't use any server" }
+        return "Can use " + access.sorted().joined(separator: ", ")
+    }
+}
+
+struct AccessEditor: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let client: PairedClient
     @State private var access: Set<String>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("What can \(client.clientName) use?").font(.title3.weight(.semibold))
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                AppAvatar(name: client.clientName, size: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("What can \(client.clientName) use?").font(.title3.weight(.semibold))
+                    Text("It won't see servers you leave out.").font(.callout).foregroundStyle(.secondary)
+                }
+            }
             ServerAccessPicker(servers: model.servers.map(\.name), selection: $access)
-            Spacer(minLength: 0)
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -211,7 +332,7 @@ private struct AccessEditor: View {
             }
         }
         .padding(20)
-        .frame(width: 380, height: 360)
+        .frame(width: 380)
         .onAppear { access = model.access(for: client.clientID) }
     }
 }
@@ -223,62 +344,106 @@ private struct RelayTab: View {
     @State private var relayURL = ""
     @State private var secret = ""
     @State private var deploying = false
+    @State private var showAdvanced = false
     @State private var updateStep: RelayDeployer.Step?
     @State private var updateError: String?
 
     var body: some View {
         Form {
             Section {
-                if let deployment = model.deployment {
-                    LabeledContent("Deployed to", value: deployment.accountName)
-                    if model.relayUpdateAvailable {
-                        HStack {
-                            Text(updateStep?.title ?? "A newer relay comes with this version of Porchlight.")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Update Relay") { update() }
-                                .disabled(updateStep != nil)
-                        }
-                    } else {
-                        Text("The relay is up to date.").foregroundStyle(.secondary)
-                    }
-                    if let updateError {
-                        Text(updateError).foregroundStyle(.red).font(.callout)
-                    }
-                    Button("Deploy Again…") { deploying = true }
-                } else {
-                    HStack {
-                        Text("Run your relay in your own Cloudflare account. It takes about a minute and fits in the free plan.")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Deploy to Cloudflare…") { deploying = true }
-                            .buttonStyle(.borderedProminent)
+                LabeledContent("Status") {
+                    HStack(spacing: 6) {
+                        StatusDot(statusColor)
+                        Text(model.statusText)
                     }
                 }
-            } header: {
-                Text("Cloudflare")
+                if model.isConfigured {
+                    LabeledContent("Connector URL") {
+                        HStack(spacing: 6) {
+                            Text(model.endpoint)
+                                .font(.callout.monospaced())
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+                            CopyButton(text: model.endpoint)
+                                .buttonStyle(.borderless)
+                        }
+                    }
+                }
+            } footer: {
+                if model.isConfigured {
+                    Footnote("Add the connector URL as a custom connector in Claude, ChatGPT or any MCP client.")
+                }
+            }
+
+            Section("Cloudflare") {
+                if let deployment = model.deployment {
+                    LabeledContent("Account", value: deployment.accountName)
+                    LabeledContent("Relay") {
+                        if let updateStep {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text(updateStep.title).foregroundStyle(.secondary)
+                            }
+                        } else if model.relayUpdateAvailable {
+                            HStack(spacing: 8) {
+                                Text("Update available").foregroundStyle(.secondary)
+                                Button("Update") { update() }
+                            }
+                        } else {
+                            Text("Up to date").foregroundStyle(.secondary)
+                        }
+                    }
+                    if let updateError {
+                        Label(updateError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.callout)
+                            .foregroundStyle(.red)
+                    }
+                    HStack {
+                        Spacer()
+                        Button("Redeploy…") { deploying = true }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Porchlight needs a relay on the internet that cloud apps can reach. Deploy one to your own Cloudflare account: it takes about a minute and fits in the free plan.")
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Deploy to Cloudflare…") { deploying = true }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.porchlight)
+                    }
+                    .padding(.vertical, 4)
+                }
             }
 
             Section {
-                TextField("URL", text: $relayURL, prompt: Text("https://porchlight-relay.you.workers.dev"))
-                SecureField("Secret", text: $secret, prompt: Text("AGENT_SECRET"))
-                HStack {
-                    Spacer()
-                    Button("Save & Reconnect") { save() }
-                        .disabled(relayURL.isEmpty || secret.isEmpty || !changed)
+                DisclosureGroup("Use a relay you deployed yourself", isExpanded: $showAdvanced) {
+                    TextField("URL", text: $relayURL, prompt: Text("https://porchlight-relay.you.workers.dev"))
+                    SecureField("Secret", text: $secret, prompt: Text("AGENT_SECRET"))
+                    HStack {
+                        Spacer()
+                        Button("Save & Reconnect") { save() }
+                            .disabled(relayURL.isEmpty || secret.isEmpty || !changed)
+                    }
                 }
-            } header: {
-                Text("Connection")
-            } footer: {
-                Text("Filled in for you when Porchlight deploys the relay. For a relay you deployed yourself, enter its URL and AGENT_SECRET.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .onAppear(perform: load)
+        .onAppear {
+            load()
+            showAdvanced = model.deployment == nil && model.isConfigured
+        }
         .onChange(of: model.relayURL) { load() }
         .sheet(isPresented: $deploying) { DeployView() }
+    }
+
+    private var statusColor: Color {
+        switch model.state {
+        case .off: .secondary.opacity(0.5)
+        case .starting, .relay(.connecting): .yellow
+        case .relay(.connected): .green
+        case .relay(.disconnected): .red
+        }
     }
 
     private var changed: Bool { relayURL != model.relayURL || secret != model.secret || !model.isOn }
@@ -321,7 +486,7 @@ private struct GeneralTab: View {
         @Bindable var model = model
         Form {
             Section {
-                Toggle("Open Porchlight at login", isOn: $launchAtLogin)
+                Toggle("Open at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, enabled in
                         do {
                             try LoginItem.set(enabled)
@@ -332,20 +497,25 @@ private struct GeneralTab: View {
                         }
                     }
                 if LoginItem.needsApproval {
-                    Text("Allow Porchlight in System Settings → General → Login Items.")
-                        .font(.caption)
+                    Label("Allow Porchlight in System Settings → General → Login Items.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
                         .foregroundStyle(.orange)
                 }
                 if let loginItemError {
-                    Text(loginItemError).font(.caption).foregroundStyle(.red)
+                    Text(loginItemError).font(.callout).foregroundStyle(.red)
+                }
+                Toggle(isOn: $model.keepAwake) {
+                    Text("Keep this Mac awake while Porchlight is on")
+                    Text("Cloud apps can only reach your servers while your Mac is awake. Closing the lid still puts it to sleep.")
                 }
             }
-            Section {
-                Toggle("Keep this Mac awake while Porchlight is on", isOn: $model.keepAwake)
-            } footer: {
-                Text("Cloud apps can only reach your servers while your Mac is awake. Closing the lid still puts it to sleep.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+            Section("About") {
+                LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")
+                LabeledContent("Source code") {
+                    Link("github.com/strazan/porchlight", destination: URL(string: "https://github.com/strazan/porchlight")!)
+                }
+                LabeledContent("License", value: "MIT")
             }
         }
         .formStyle(.grouped)

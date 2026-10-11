@@ -26,15 +26,17 @@ final class PromptPanel: NSObject, NSWindowDelegate {
         if bringToFront || !panel.isVisible {
             if !panel.isVisible { NSSound(named: "Glass")?.play() }
             panel.center()
-            NSApp.activate()
-            panel.makeKeyAndOrderFront(nil)
+            panel.orderFrontRegardless()
+            panel.makeKey()
         }
     }
 
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: .zero,
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            // Non-activating, like Spotlight: it takes focus (Return, Esc) without activating
+            // Porchlight, so its other windows stay put and focus returns when it closes.
+            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -44,6 +46,8 @@ final class PromptPanel: NSObject, NSWindowDelegate {
         panel.level = .floating
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.delegate = self
         // A hosting controller sizes the panel to fit the view.
         panel.contentViewController = NSHostingController(rootView: PromptView().environment(model))
@@ -62,7 +66,7 @@ final class PromptPanel: NSObject, NSWindowDelegate {
     }
 }
 
-private struct PromptView: View {
+struct PromptView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
@@ -73,10 +77,47 @@ private struct PromptView: View {
                 ApprovalView(request: request)
             }
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 28)
-        .padding(.bottom, 20)
-        .frame(width: 420)
+        .padding(24)
+        .frame(width: 440)
+    }
+}
+
+/// The layout both prompts share: who's asking and what, details, then the answer.
+private struct PromptLayout<Details: View, Buttons: View>: View {
+    let appName: String
+    let title: String
+    let subtitle: String
+    @ViewBuilder var details: Details
+    @ViewBuilder var buttons: Buttons
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 12) {
+                AppAvatar(name: appName, size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.title3.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(subtitle)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            details
+            HStack(spacing: 8) {
+                buttons
+            }
+            .controlSize(.large)
+            let waiting = model.pendingPairings.count + model.pendingApprovals.count - 1
+            if waiting > 0 {
+                Text("\(waiting) more waiting")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
     }
 }
 
@@ -86,63 +127,52 @@ private struct PairingView: View {
     @State private var access: Set<String>?
 
     var body: some View {
-            VStack(spacing: 14) {
-                Image(systemName: "lightbulb.max.fill")
-                    .font(.system(size: 34))
-                    .foregroundStyle(.yellow)
-                Text("Connect \(request.clientName)?")
-                    .font(.title2.weight(.semibold))
-                    .multilineTextAlignment(.center)
-
-                VStack(spacing: 6) {
-                    if let domain = request.clientDomain {
-                        Label("Published by \(domain)", systemImage: "checkmark.seal.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Label("This app named itself; its name isn't verified", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                    }
-                    Text("Access will be sent to **\(request.redirectHost)**.")
-                        .foregroundStyle(.secondary)
-                    if request.loopback {
-                        Text("That's an app on this computer. Allow only if you just started connecting from it.")
-                            .foregroundStyle(.orange)
-                            .multilineTextAlignment(.center)
-                    }
-                }
-                .font(.callout)
-
-                VStack(spacing: 4) {
-                    Text("Check that your browser shows this code:")
+        PromptLayout(
+            appName: request.clientName,
+            title: "Connect \(request.clientName)?",
+            subtitle: origin
+        ) {
+            VStack(alignment: .leading, spacing: 14) {
+                if request.loopback {
+                    Label("Access goes to an app on this computer. Allow only if you just started connecting from it.", systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                VStack(spacing: 6) {
+                    Text("Your browser should show the same code")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(request.formattedCode)
                         .font(.system(size: 30, weight: .semibold, design: .monospaced))
+                        .kerning(2)
                         .textSelection(.enabled)
                 }
-                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.porchlight.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
 
                 if !request.clientID.isEmpty {
-                    ServerAccessPicker(servers: model.servers.filter(\.enabled).map(\.name), selection: $access)
-                        .padding(12)
-                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("What it can use").font(.callout.weight(.medium))
+                        ServerAccessPicker(servers: model.servers.filter(\.enabled).map(\.name), selection: $access)
+                    }
                 }
-                Text("You can change its access or revoke it in Settings → Apps.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-
-                HStack {
-                    Button("Deny", role: .cancel) { model.decide(request, allow: false) }
-                        .keyboardShortcut(.cancelAction)
-                    Button("Allow") { model.decide(request, allow: true, servers: access) }
-                        .keyboardShortcut(.defaultAction)
-                }
-                .controlSize(.large)
-
-                WaitingCount(count: model.pendingPairings.count + model.pendingApprovals.count - 1)
             }
-            .onChange(of: request.id) { access = nil }
+        } buttons: {
+            Button("Deny", role: .cancel) { model.decide(request, allow: false) }
+                .keyboardShortcut(.cancelAction)
+            Spacer()
+            Button("Allow") { model.decide(request, allow: true, servers: access) }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+        }
+        .onChange(of: request.id) { access = nil }
+    }
+
+    private var origin: String {
+        let who = request.clientDomain.map { "Published by \($0)" } ?? "This app named itself; its name isn't verified"
+        return "\(who). Access goes to \(request.redirectHost)."
     }
 }
 
@@ -151,64 +181,68 @@ private struct ApprovalView: View {
     let request: ToolApprovalRequest
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "hand.raised.fill")
-                .font(.system(size: 32))
-                .foregroundStyle(.orange)
-            VStack(spacing: 4) {
-                Text("\(request.clientName) wants to use \(request.title ?? request.tool)")
-                    .font(.title3.weight(.semibold))
-                    .multilineTextAlignment(.center)
-                Text("\(request.tool) on \(request.server)")
-                    .font(.callout.monospaced())
-                    .foregroundStyle(.secondary)
-            }
-
-            ScrollView {
-                Text(prettyJSON(request.arguments))
-                    .font(.caption.monospaced())
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-            }
-            .frame(maxHeight: 180)
-            .fixedSize(horizontal: false, vertical: true)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
-
-            HStack {
-                Button("Deny", role: .cancel) { model.answer(request, with: .deny) }
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button("Always Allow") { model.answer(request, with: .allowAlways) }
-                Button("Allow Once") { model.answer(request, with: .allowOnce) }
-                    .keyboardShortcut(.defaultAction)
-            }
-            .controlSize(.large)
-
-            Text("Always Allow stops asking about \(request.tool) on \(request.server). You can change that in Settings → Servers.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            WaitingCount(count: model.pendingPairings.count + model.pendingApprovals.count - 1)
+        PromptLayout(
+            appName: request.clientName,
+            title: "\(request.clientName) wants to use \(request.title ?? request.tool)",
+            subtitle: "\(request.tool) on \(request.server)"
+        ) {
+            ArgumentsView(arguments: request.arguments)
+        } buttons: {
+            Button("Deny", role: .cancel) { model.answer(request, with: .deny) }
+                .keyboardShortcut(.cancelAction)
+            Spacer()
+            Button("Always Allow") { model.answer(request, with: .allowAlways) }
+                .help("Stop asking about \(request.tool) on \(request.server). You can change this in the server's settings.")
+            Button("Allow Once") { model.answer(request, with: .allowOnce) }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
         }
-    }
-
-    private func prettyJSON(_ value: JSONValue) -> String {
-        guard let object = try? JSONSerialization.jsonObject(with: value.serialized(), options: [.fragmentsAllowed]),
-              let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes, .fragmentsAllowed])
-        else { return String(decoding: value.serialized(), as: UTF8.self) }
-        return String(decoding: data, as: UTF8.self)
     }
 }
 
-private struct WaitingCount: View {
-    let count: Int
+/// A tool call's arguments as labeled fields; anything nested as formatted JSON.
+private struct ArgumentsView: View {
+    let arguments: JSONValue
 
     var body: some View {
-        if count > 0 {
-            Text("\(count) more waiting")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                if case .object(let fields) = arguments, !fields.isEmpty {
+                    ForEach(fields.keys.sorted(), id: \.self) { key in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(key).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                            Text(Self.display(fields[key] ?? .null))
+                                .font(.callout.monospaced())
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                } else if case .object = arguments {
+                    Text("No arguments").font(.callout).foregroundStyle(.secondary)
+                } else {
+                    Text(Self.display(arguments)).font(.callout.monospaced()).textSelection(.enabled)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+        }
+        .frame(maxHeight: 200)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    static func display(_ value: JSONValue) -> String {
+        switch value {
+        case .string(let text): return text
+        case .int(let number): return String(number)
+        case .double(let number): return String(number)
+        case .bool(let flag): return flag ? "true" : "false"
+        case .null: return "null"
+        case .array, .object:
+            guard let object = try? JSONSerialization.jsonObject(with: value.serialized(), options: [.fragmentsAllowed]),
+                  let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes, .fragmentsAllowed])
+            else { return String(decoding: value.serialized(), as: UTF8.self) }
+            return String(decoding: data, as: UTF8.self)
         }
     }
 }

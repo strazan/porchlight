@@ -16,6 +16,14 @@ public struct ImportCandidate: Sendable, Identifiable, Hashable {
     /// Nil when the entry can't be imported; see `unsupportedReason`.
     public let config: ServerConfig?
     public let unsupportedReason: String?
+
+    public init(source: Source, scope: String?, originalName: String, config: ServerConfig?, unsupportedReason: String?) {
+        self.source = source
+        self.scope = scope
+        self.originalName = originalName
+        self.config = config
+        self.unsupportedReason = unsupportedReason
+    }
 }
 
 /// Finds MCP servers configured in Claude Desktop, Claude Code and Cursor.

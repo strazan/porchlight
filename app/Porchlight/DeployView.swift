@@ -7,7 +7,7 @@ struct DeployView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
-    private enum Stage: Equatable {
+    enum Stage: Equatable {
         case token
         case account
         case subdomain
@@ -15,8 +15,12 @@ struct DeployView: View {
         case done(URL)
     }
 
-    @State private var stage: Stage = .token
-    @State private var token = Keychain.read("cloudflareToken") ?? ""
+    @State private var stage: Stage
+
+    init(stage: Stage = .token) {
+        _stage = State(initialValue: stage)
+    }
+    @State private var token = ""
     @State private var accounts: [CloudflareAPI.Account] = []
     @State private var accountID = ""
     @State private var subdomain = ""
@@ -25,14 +29,12 @@ struct DeployView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Image(systemName: "cloud.fill").font(.title).foregroundStyle(.orange)
-                VStack(alignment: .leading) {
-                    Text("Deploy to Cloudflare").font(.title2.weight(.semibold))
-                    Text("Your relay runs in your own Cloudflare account, within the free plan.")
-                        .foregroundStyle(.secondary)
-                }
-            }
+            SheetHeader(
+                title: "Deploy to Cloudflare",
+                subtitle: "Your relay runs in your own Cloudflare account, within the free plan.",
+                systemImage: "cloud.fill",
+                tint: .orange
+            )
 
             Group {
                 switch stage {
@@ -60,6 +62,7 @@ struct DeployView: View {
         }
         .padding(24)
         .frame(width: 520, height: 420)
+        .onAppear { if token.isEmpty { token = model.savedCloudflareToken() } }
     }
 
     // MARK: Steps
@@ -130,9 +133,17 @@ struct DeployView: View {
             Label("Your relay is live, and Porchlight is connecting to it.", systemImage: "checkmark.seal.fill")
                 .foregroundStyle(.green)
             Text("Add this URL as a custom connector in Claude, ChatGPT or another MCP client:")
-            CopyableURL(label: "Connector URL", url: url.appending(path: "mcp").absoluteString)
-                .padding(10)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+            HStack {
+                Text(url.appending(path: "mcp").absoluteString)
+                    .font(.callout.monospaced())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                Spacer()
+                CopyButton(text: url.appending(path: "mcp").absoluteString, label: "Copy")
+            }
+            .padding(10)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
             Text("When it connects, you'll approve it here on your Mac.")
                 .foregroundStyle(.secondary)
         }
@@ -159,8 +170,6 @@ struct DeployView: View {
             if error != nil {
                 Button("Close") { dismiss() }
                 Button("Try Again") { run(deploy) }.keyboardShortcut(.defaultAction)
-            } else {
-                Button("Deploying…") {}.disabled(true)
             }
         case .done:
             Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)

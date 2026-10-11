@@ -65,6 +65,11 @@ public actor Router: HTTPHandler {
         public let tools: [ToolSummary]
 
         public var toolCount: Int { tools.count }
+
+        public init(serverName: String, tools: [ToolSummary]) {
+            self.serverName = serverName
+            self.tools = tools
+        }
     }
 
     public struct ToolSummary: Sendable, Equatable, Identifiable {
@@ -75,6 +80,14 @@ public actor Router: HTTPHandler {
         public let destructive: Bool
 
         public var id: String { name }
+
+        public init(name: String, title: String?, description: String?, readOnly: Bool, destructive: Bool) {
+            self.name = name
+            self.title = title
+            self.description = description
+            self.readOnly = readOnly
+            self.destructive = destructive
+        }
     }
 
     /// Connects to a server the way a client would (initialize, list tools) and reports
@@ -105,6 +118,10 @@ public actor Router: HTTPHandler {
 
     public struct ProbeError: Error, Sendable, Equatable {
         public let message: String
+
+        public init(message: String) {
+            self.message = message
+        }
     }
 
     private func makeUpstream(_ config: ServerConfig) -> any Upstream {

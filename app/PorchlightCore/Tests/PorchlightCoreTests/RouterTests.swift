@@ -327,6 +327,7 @@ func sseMessages(_ body: String) -> [JSONValue] {
     }
 
     @Test func commandLineRoundTrips() {
+        #expect(ServerConfig(name: "new", command: "").commandLineString == "")
         var config = ServerConfig(name: "fs", command: "npx", args: ["-y", "@scope/server", "/Users/me/My Docs"])
         #expect(config.commandLineString == "npx -y @scope/server '/Users/me/My Docs'")
         config.commandLineString = "uvx mcp-server-git --repository \"/tmp/a b\""
