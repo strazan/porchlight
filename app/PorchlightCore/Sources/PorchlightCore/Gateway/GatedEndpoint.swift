@@ -23,19 +23,26 @@ struct GatedEndpoint: MCPEndpoint {
         var server: String? = if case .server(let name) = scope { name } else { nil }
         var tool: String?
 
-        if method == "tools/call", let name = request["params"]?["name"]?.stringValue {
+        if method == "tools/call" {
+            // Every call is checked before it runs: one this can't place never reaches a server.
+            guard let name = request["params"]?["name"]?.stringValue else {
+                return .rpcError(id: request.rpcID, code: -32602, message: "Missing tool name")
+            }
             tool = name
-            if let target = await target(of: name) {
-                server = target.server
-                tool = target.tool
-                let decision = await router.authorize(
-                    server: target.server, tool: target.tool,
-                    arguments: request["params"]?["arguments"] ?? .object([:]), client: client, queuedAt: queuedAt
-                )
-                if case .denied(let reason) = decision {
-                    await record(method, server, tool, started, .denied(reason))
-                    return Self.declined(request.rpcID, reason)
-                }
+            guard let target = await target(of: name) else {
+                let reason = "Unknown tool: \(name)"
+                await record(method, server, tool, started, .error(reason))
+                return .rpcError(id: request.rpcID, code: -32602, message: reason)
+            }
+            server = target.server
+            tool = target.tool
+            let decision = await router.authorize(
+                server: target.server, tool: target.tool,
+                arguments: request["params"]?["arguments"] ?? .object([:]), client: client, queuedAt: queuedAt
+            )
+            if case .denied(let reason) = decision {
+                await record(method, server, tool, started, .denied(reason))
+                return Self.declined(request.rpcID, reason)
             }
         }
 

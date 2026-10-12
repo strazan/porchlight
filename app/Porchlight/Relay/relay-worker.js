@@ -5244,6 +5244,16 @@ function pairingPage(info, handle, pairing) {
   <input type="hidden" name="pairing" value="${"id" in pairing ? escape(pairing.id) : ""}">
   <input type="hidden" name="decision" value="deny">
 </form>`;
+  if ("busy" in pairing) {
+    return page(
+      "Porchlight is busy",
+      `<div class="bulb">\u{1F4A1}</div>
+<h1>Too many requests are waiting</h1>
+<p>Several connection requests are already waiting for an answer on your Mac.</p>
+<p>Answer or dismiss them in Porchlight, or wait a few minutes, then try again.</p>
+<div class="actions"><a class="button" href="">Try again</a></div>`
+    );
+  }
   if (!("id" in pairing)) {
     return page(
       "Porchlight is offline",
@@ -5340,6 +5350,7 @@ function oauthApi(origin, env) {
 }
 __name(oauthApi, "oauthApi");
 async function forwardToHost(request, env, ctx) {
+  if (!ctx.auth?.clientId) return new Response("Unauthorized", { status: 401 });
   const headers = new Headers(request.headers);
   for (const name of [...headers.keys()]) {
     if (name.startsWith("porchlight-")) headers.delete(name);
@@ -5376,7 +5387,7 @@ async function showAuthorize(request, env, origin) {
   const consent = await oauth.beginConsent(authRequest);
   const info = {
     client_id: authRequest.clientId,
-    client_name: details.clientName,
+    client_name: cleanName(details.clientName),
     client_domain: details.clientDomain,
     redirect_host: details.redirectHost,
     loopback: details.redirectIsLoopback
@@ -5419,6 +5430,11 @@ async function submitAuthorize(request, env, origin) {
   return new Response(null, { status: 302, headers: approved.headers });
 }
 __name(submitAuthorize, "submitAuthorize");
+function cleanName(name) {
+  const plain = name.replace(/\p{Cf}/gu, "").replace(/[\p{Cc}\u2028\u2029]/gu, " ").replace(/\s+/g, " ").trim();
+  return [...plain].slice(0, 80).join("") || "Unnamed app";
+}
+__name(cleanName, "cleanName");
 function grantIdFromToken(token) {
   const parts = token?.split(":") ?? [];
   return parts.length === 3 ? parts[1] : "";
@@ -5630,6 +5646,8 @@ __name(concat, "concat");
 var START_TIMEOUT_MS = 6e4;
 var PAIRING_TTL_MS = 10 * 6e4;
 var KV_LAG_MS = 5 * 6e4;
+var REVOKED_KEEP_MS = 2 * 36e5;
+var MAX_PAIRINGS = 5;
 var MAX_REQUEST_BODY = 8 * 1024 * 1024;
 var QUEUE_TTL_MS = 7 * 24 * 36e5;
 var MAX_QUEUED = 100;
@@ -5685,10 +5703,14 @@ var Hub = class extends DurableObject {
   async startPairing(info, handleHash) {
     const ws = this.host();
     if (!ws) return { offline: true };
+    const now = Date.now();
+    const waiting = [...(await this.ctx.storage.list({ prefix: "pair:" })).values()];
+    if (waiting.filter((r) => r.expiresAt > now).length >= MAX_PAIRINGS) return { busy: true };
     const id = crypto.randomUUID();
     const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1e6).padStart(6, "0");
-    const record = { ...info, code, handleHash, state: "pending", expiresAt: Date.now() + PAIRING_TTL_MS };
+    const record = { ...info, code, handleHash, state: "pending", expiresAt: now + PAIRING_TTL_MS };
     await this.ctx.storage.put(`pair:${id}`, record);
+    await this.scheduleCleanup(record.expiresAt);
     this.sendPairRequest(ws, id, record);
     return { id, code };
   }
@@ -5735,7 +5757,7 @@ var Hub = class extends DurableObject {
     const now = Date.now();
     const revoked = /* @__PURE__ */ new Set();
     for (const [key, at] of await this.ctx.storage.list({ prefix: "revoked:" })) {
-      if (now - at < KV_LAG_MS) revoked.add(key.slice("revoked:".length));
+      if (now - at < REVOKED_KEEP_MS) revoked.add(key.slice("revoked:".length));
       else await this.ctx.storage.delete(key);
     }
     let cursor;
@@ -5769,8 +5791,9 @@ var Hub = class extends DurableObject {
   async revokeClient(ws, grantId) {
     const oauth = await this.oauth();
     if (!oauth) return;
-    await oauth.revokeGrant(grantId, OWNER);
     await this.ctx.storage.put(`revoked:${grantId}`, Date.now());
+    for (const [id, p] of this.pending) if (p.grantId === grantId) this.cancel(id, "revoked");
+    await oauth.revokeGrant(grantId, OWNER);
     for (const [key, item] of await this.ctx.storage.list({ prefix: "queue:" })) {
       if (item.grant_id === grantId) await this.ctx.storage.delete(key);
     }
@@ -5842,6 +5865,7 @@ var Hub = class extends DurableObject {
     }
     for (const [key, record] of await this.ctx.storage.list({ prefix: "pair:" })) {
       if (record.expiresAt <= now) await this.ctx.storage.delete(key);
+      else next = Math.min(next ?? record.expiresAt, record.expiresAt);
     }
     if (next !== void 0) await this.ctx.storage.setAlarm(next);
   }
@@ -5859,10 +5883,17 @@ var Hub = class extends DurableObject {
     return this.ctx.getWebSockets().find((ws) => ws.readyState === WebSocket.OPEN);
   }
   async forward(request) {
-    const body = new Uint8Array(await request.arrayBuffer());
+    const grantId = decodeURIComponent(request.headers.get("porchlight-grant-id") ?? "");
+    if (grantId && await this.ctx.storage.get(`revoked:${grantId}`) !== void 0) {
+      return new Response("This connection was revoked", {
+        status: 401,
+        headers: { "www-authenticate": 'Bearer error="invalid_token"' }
+      });
+    }
+    const body = await readBody(request, MAX_REQUEST_BODY);
+    if (!body) return new Response("Request body too large", { status: 413 });
     const ws = this.host();
     if (!ws) return this.offline(request, body);
-    if (body.length > MAX_REQUEST_BODY) return new Response("Request body too large", { status: 413 });
     const url = new URL(request.url);
     const headers = [];
     for (const [name, value] of request.headers) {
@@ -5878,6 +5909,7 @@ var Hub = class extends DurableObject {
       }, START_TIMEOUT_MS);
       this.pending.set(id, {
         ws,
+        grantId,
         started: false,
         writer,
         timer,
@@ -5913,7 +5945,7 @@ var Hub = class extends DurableObject {
         return this.revokeClient(ws, frame.grant_id);
       case "hello":
         ws.serializeAttachment({ proto: frame.proto, app_version: frame.app_version });
-        if (frame.queue_key && fromBase64(frame.queue_key).length === 65) {
+        if (frame.queue_key && decodesTo(frame.queue_key, 65)) {
           await this.ctx.storage.put("queuekey", frame.queue_key);
         }
         return;
@@ -5926,20 +5958,31 @@ var Hub = class extends DurableObject {
       case "res_start": {
         const p = this.pending.get(frame.id);
         if (!p || p.started) return;
-        p.started = true;
-        clearTimeout(p.timer);
         const headers = new Headers();
         for (const [name, value] of frame.headers) {
-          if (!STRIP_RESPONSE.has(name.toLowerCase())) headers.append(name, value);
+          if (STRIP_RESPONSE.has(name.toLowerCase())) continue;
+          try {
+            headers.append(name, value);
+          } catch {
+          }
         }
-        p.start(frame.status, headers);
-        if (NULL_BODY_STATUS.has(frame.status)) this.finish(frame.id);
+        const status = frame.status >= 200 && frame.status <= 599 && frame.status !== 101 ? frame.status : 502;
+        p.started = true;
+        clearTimeout(p.timer);
+        p.start(status, headers);
+        if (NULL_BODY_STATUS.has(status)) this.finish(frame.id);
         return;
       }
       case "res_chunk": {
         const p = this.pending.get(frame.id);
         if (!p?.started) return;
-        p.writer.write(fromBase64(frame.data_b64)).catch(() => this.cancel(frame.id));
+        let data;
+        try {
+          data = fromBase64(frame.data_b64);
+        } catch {
+          return this.cancel(frame.id);
+        }
+        p.writer.write(data).catch(() => this.cancel(frame.id));
         return;
       }
       case "res_end":
@@ -5957,10 +6000,10 @@ var Hub = class extends DurableObject {
   webSocketError(ws) {
     for (const [id, p] of this.pending) if (p.ws === ws) this.finish(id, "host error");
   }
-  cancel(id) {
+  cancel(id, error) {
     const p = this.pending.get(id);
     if (!p) return;
-    this.finish(id);
+    this.finish(id, error);
     try {
       p.ws.send(JSON.stringify({ type: "cancel", id }));
     } catch {
@@ -5986,6 +6029,40 @@ var Hub = class extends DurableObject {
     }
   }
 };
+async function readBody(request, limit) {
+  if (Number(request.headers.get("content-length") ?? 0) > limit) return null;
+  if (!request.body) return new Uint8Array();
+  const chunks = [];
+  let length = 0;
+  const reader = request.body.getReader();
+  for (; ; ) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    length += value.length;
+    if (length > limit) {
+      await reader.cancel().catch(() => {
+      });
+      return null;
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return body;
+}
+__name(readBody, "readBody");
+function decodesTo(b64, length) {
+  try {
+    return fromBase64(b64).length === length;
+  } catch {
+    return false;
+  }
+}
+__name(decodesTo, "decodesTo");
 function offline(body) {
   let id = null;
   try {

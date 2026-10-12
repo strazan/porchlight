@@ -22,6 +22,11 @@ const START_TIMEOUT_MS = 60_000;
 const PAIRING_TTL_MS = 10 * 60_000;
 // KV listings can miss writes (new or revoked grants) for up to a minute; bridge longer.
 const KV_LAG_MS = 5 * 60_000;
+// Revoking deletes a grant's tokens by listing them, which can miss one issued in the
+// last minute. Refuse revoked grants here for longer than an access token lives (1 h).
+const REVOKED_KEEP_MS = 2 * 3600_000;
+// Anyone can open the consent page, so cap how many prompts can wait on the Mac.
+export const MAX_PAIRINGS = 5;
 const MAX_REQUEST_BODY = 8 * 1024 * 1024;
 // Requests saved while the host is offline: how long they keep, how many, how big.
 export const QUEUE_TTL_MS = 7 * 24 * 3600_000;
@@ -64,6 +69,7 @@ interface QueuedItem extends QueuedFrame {
 
 interface Pending {
 	ws: WebSocket;
+	grantId: string;
 	started: boolean;
 	start(status: number, headers: Headers): void;
 	writer: WritableStreamDefaultWriter<Uint8Array>;
@@ -115,10 +121,14 @@ export class Hub extends DurableObject<Env> {
 	async startPairing(info: PairingInfo, handleHash: string): Promise<Pairing> {
 		const ws = this.host();
 		if (!ws) return { offline: true };
+		const now = Date.now();
+		const waiting = [...(await this.ctx.storage.list<PairingRecord>({ prefix: "pair:" })).values()];
+		if (waiting.filter((r) => r.expiresAt > now).length >= MAX_PAIRINGS) return { busy: true };
 		const id = crypto.randomUUID();
 		const code = String(crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000).padStart(6, "0");
-		const record: PairingRecord = { ...info, code, handleHash, state: "pending", expiresAt: Date.now() + PAIRING_TTL_MS };
+		const record: PairingRecord = { ...info, code, handleHash, state: "pending", expiresAt: now + PAIRING_TTL_MS };
 		await this.ctx.storage.put(`pair:${id}`, record);
+		await this.scheduleCleanup(record.expiresAt);
 		this.sendPairRequest(ws, id, record);
 		return { id, code };
 	}
@@ -172,7 +182,7 @@ export class Hub extends DurableObject<Env> {
 		const now = Date.now();
 		const revoked = new Set<string>();
 		for (const [key, at] of await this.ctx.storage.list<number>({ prefix: "revoked:" })) {
-			if (now - at < KV_LAG_MS) revoked.add(key.slice("revoked:".length));
+			if (now - at < REVOKED_KEEP_MS) revoked.add(key.slice("revoked:".length));
 			else await this.ctx.storage.delete(key);
 		}
 		let cursor: string | undefined;
@@ -208,8 +218,9 @@ export class Hub extends DurableObject<Env> {
 	private async revokeClient(ws: WebSocket, grantId: string): Promise<void> {
 		const oauth = await this.oauth();
 		if (!oauth) return;
-		await oauth.revokeGrant(grantId, OWNER);
 		await this.ctx.storage.put(`revoked:${grantId}`, Date.now());
+		for (const [id, p] of this.pending) if (p.grantId === grantId) this.cancel(id, "revoked");
+		await oauth.revokeGrant(grantId, OWNER);
 		for (const [key, item] of await this.ctx.storage.list<QueuedItem>({ prefix: "queue:" })) {
 			if (item.grant_id === grantId) await this.ctx.storage.delete(key);
 		}
@@ -286,6 +297,7 @@ export class Hub extends DurableObject<Env> {
 		}
 		for (const [key, record] of await this.ctx.storage.list<PairingRecord>({ prefix: "pair:" })) {
 			if (record.expiresAt <= now) await this.ctx.storage.delete(key);
+			else next = Math.min(next ?? record.expiresAt, record.expiresAt);
 		}
 		if (next !== undefined) await this.ctx.storage.setAlarm(next);
 	}
@@ -308,10 +320,17 @@ export class Hub extends DurableObject<Env> {
 	}
 
 	private async forward(request: Request): Promise<Response> {
-		const body = new Uint8Array(await request.arrayBuffer());
+		const grantId = decodeURIComponent(request.headers.get("porchlight-grant-id") ?? "");
+		if (grantId && (await this.ctx.storage.get(`revoked:${grantId}`)) !== undefined) {
+			return new Response("This connection was revoked", {
+				status: 401,
+				headers: { "www-authenticate": 'Bearer error="invalid_token"' },
+			});
+		}
+		const body = await readBody(request, MAX_REQUEST_BODY);
+		if (!body) return new Response("Request body too large", { status: 413 });
 		const ws = this.host();
 		if (!ws) return this.offline(request, body);
-		if (body.length > MAX_REQUEST_BODY) return new Response("Request body too large", { status: 413 });
 
 		const url = new URL(request.url);
 		const headers: HeaderList = [];
@@ -332,6 +351,7 @@ export class Hub extends DurableObject<Env> {
 
 			this.pending.set(id, {
 				ws,
+				grantId,
 				started: false,
 				writer,
 				timer,
@@ -370,7 +390,7 @@ export class Hub extends DurableObject<Env> {
 			case "hello":
 				ws.serializeAttachment({ proto: frame.proto, app_version: frame.app_version });
 				// The key queued requests are sealed to; hosts without one get no queue.
-				if (frame.queue_key && fromBase64(frame.queue_key).length === 65) {
+				if (frame.queue_key && decodesTo(frame.queue_key, 65)) {
 					await this.ctx.storage.put("queuekey", frame.queue_key);
 				}
 				return;
@@ -383,14 +403,21 @@ export class Hub extends DurableObject<Env> {
 			case "res_start": {
 				const p = this.pending.get(frame.id);
 				if (!p || p.started) return;
-				p.started = true;
-				clearTimeout(p.timer);
+				// The host passes on what its servers answered: drop what a Response can't carry.
 				const headers = new Headers();
 				for (const [name, value] of frame.headers) {
-					if (!STRIP_RESPONSE.has(name.toLowerCase())) headers.append(name, value);
+					if (STRIP_RESPONSE.has(name.toLowerCase())) continue;
+					try {
+						headers.append(name, value);
+					} catch {
+						// invalid header name or value
+					}
 				}
-				p.start(frame.status, headers);
-				if (NULL_BODY_STATUS.has(frame.status)) this.finish(frame.id);
+				const status = frame.status >= 200 && frame.status <= 599 && frame.status !== 101 ? frame.status : 502;
+				p.started = true;
+				clearTimeout(p.timer);
+				p.start(status, headers);
+				if (NULL_BODY_STATUS.has(status)) this.finish(frame.id);
 				return;
 			}
 			case "res_chunk": {
@@ -398,7 +425,13 @@ export class Hub extends DurableObject<Env> {
 				if (!p?.started) return;
 				// Not awaited: the write only settles once the client reads. A rejection
 				// means the client went away.
-				p.writer.write(fromBase64(frame.data_b64)).catch(() => this.cancel(frame.id));
+				let data: Uint8Array;
+				try {
+					data = fromBase64(frame.data_b64);
+				} catch {
+					return this.cancel(frame.id);
+				}
+				p.writer.write(data).catch(() => this.cancel(frame.id));
 				return;
 			}
 			case "res_end":
@@ -420,10 +453,10 @@ export class Hub extends DurableObject<Env> {
 		for (const [id, p] of this.pending) if (p.ws === ws) this.finish(id, "host error");
 	}
 
-	private cancel(id: string): void {
+	private cancel(id: string, error?: string): void {
 		const p = this.pending.get(id);
 		if (!p) return;
-		this.finish(id);
+		this.finish(id, error);
 		try {
 			p.ws.send(JSON.stringify({ type: "cancel", id } satisfies RelayToHost));
 		} catch {
@@ -448,6 +481,40 @@ export class Hub extends DurableObject<Env> {
 			p.start(502, new Headers({ "content-type": "text/plain" }));
 			p.writer.close().catch(() => {});
 		}
+	}
+}
+
+/** The request body, or null if it's longer than `limit` (checked before reading it all). */
+async function readBody(request: Request, limit: number): Promise<Uint8Array | null> {
+	if (Number(request.headers.get("content-length") ?? 0) > limit) return null;
+	if (!request.body) return new Uint8Array();
+	const chunks: Uint8Array[] = [];
+	let length = 0;
+	const reader = request.body.getReader();
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		length += value.length;
+		if (length > limit) {
+			await reader.cancel().catch(() => {});
+			return null;
+		}
+		chunks.push(value);
+	}
+	const body = new Uint8Array(length);
+	let offset = 0;
+	for (const chunk of chunks) {
+		body.set(chunk, offset);
+		offset += chunk.length;
+	}
+	return body;
+}
+
+function decodesTo(b64: string, length: number): boolean {
+	try {
+		return fromBase64(b64).length === length;
+	} catch {
+		return false;
 	}
 }
 

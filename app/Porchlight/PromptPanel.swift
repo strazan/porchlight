@@ -16,16 +16,22 @@ final class PromptPanel: NSObject, NSWindowDelegate {
 
     private var hasPrompts: Bool { !model.pendingPairings.isEmpty || !model.pendingApprovals.isEmpty }
 
-    func update(bringToFront: Bool = false) {
+    /// Shows the panel while there's something to answer. It only takes keyboard focus when
+    /// the owner asks for it (`focus`): a prompt that pops up while they're typing elsewhere
+    /// mustn't catch a Return meant for another app.
+    func update(focus: Bool = false) {
         guard hasPrompts else {
             panel?.orderOut(nil)
             return
         }
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        if bringToFront || !panel.isVisible {
-            if !panel.isVisible { NSSound(named: "Glass")?.play() }
+        if !panel.isVisible {
+            NSSound(named: "Glass")?.play()
             panel.center()
+            panel.orderFrontRegardless()
+        }
+        if focus {
             panel.orderFrontRegardless()
             panel.makeKey()
         }
@@ -34,8 +40,8 @@ final class PromptPanel: NSObject, NSWindowDelegate {
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: .zero,
-            // Non-activating, like Spotlight: it takes focus (Return, Esc) without activating
-            // Porchlight, so its other windows stay put and focus returns when it closes.
+            // Non-activating, like Spotlight: once clicked it takes focus (Return, Esc) without
+            // activating Porchlight, so its other windows stay put and focus returns when it closes.
             styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -57,10 +63,10 @@ final class PromptPanel: NSObject, NSWindowDelegate {
     /// Closing the panel declines what it shows: never grant access by accident. With more
     /// requests waiting, it stays open on the next one.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if let request = model.pendingPairings.first {
-            model.decide(request, allow: false)
-        } else if let request = model.pendingApprovals.first {
-            model.answer(request, with: .deny)
+        switch model.currentPrompt {
+        case .pairing(let request): model.decide(request, allow: false)
+        case .approval(let request): model.answer(request, with: .deny)
+        case nil: break
         }
         return !hasPrompts
     }
@@ -68,17 +74,28 @@ final class PromptPanel: NSObject, NSWindowDelegate {
 
 struct PromptView: View {
     @Environment(AppModel.self) private var model
+    /// Off for a moment whenever a different request appears, so a click or Return meant for
+    /// the previous one can't answer it.
+    @State private var armed = false
 
     var body: some View {
+        let prompt = model.currentPrompt
         Group {
-            if let request = model.pendingPairings.first {
-                PairingView(request: request)
-            } else if let request = model.pendingApprovals.first {
-                ApprovalView(request: request)
+            switch prompt {
+            case .pairing(let request): PairingView(request: request)
+            case .approval(let request): ApprovalView(request: request)
+            case nil: EmptyView()
             }
         }
+        .disabled(!armed && !model.isPreview)
         .padding(24)
         .frame(width: 440)
+        .task(id: prompt?.key) {
+            model.shownPrompt = prompt?.key
+            armed = false
+            try? await Task.sleep(for: .milliseconds(800))
+            armed = true
+        }
     }
 }
 

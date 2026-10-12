@@ -19,7 +19,13 @@ final class AppModel {
         case relay(RelayClient.Status)
     }
 
-    var relayURL: String { didSet { defaults.set(relayURL, forKey: "relayURL") } }
+    var relayURL: String {
+        didSet {
+            defaults.set(relayURL, forKey: "relayURL")
+            // A relay this Mac didn't set up may have apps connected that it knows nothing about.
+            if relayURL != oldValue { defaults.set(true, forKey: "lockUnknownApps") }
+        }
+    }
     var secret: String { didSet { if !isPreview { Keychain.write("agentSecret", secret) } } }
     var keepAwake: Bool {
         didSet {
@@ -90,6 +96,30 @@ final class AppModel {
 
     /// Tool calls waiting for the owner to allow or deny them, oldest first.
     private(set) var pendingApprovals: [ToolApprovalRequest] = []
+
+    enum Prompt {
+        case pairing(PairingRequest)
+        case approval(ToolApprovalRequest)
+
+        var key: String {
+            switch self {
+            case .pairing(let request): "pairing:\(request.id)"
+            case .approval(let request): "approval:\(request.id)"
+            }
+        }
+    }
+
+    /// The prompt on screen. Set by the panel as it shows one.
+    var shownPrompt: String?
+
+    /// What the prompt panel shows: the one already on screen until it's answered, so a new
+    /// request (anyone can ask to connect) never takes its place under the owner's cursor.
+    /// Otherwise pairings first.
+    var currentPrompt: Prompt? {
+        let pairings = pendingPairings.map(Prompt.pairing)
+        let approvals = pendingApprovals.map(Prompt.approval)
+        return (pairings + approvals).first { $0.key == shownPrompt } ?? pairings.first ?? approvals.first
+    }
     /// Recent requests, oldest first.
     private(set) var activity: [ActivityEvent] = []
 
@@ -420,6 +450,9 @@ final class AppModel {
         deployment = Deployment(accountID: account.id, accountName: account.name, scriptName: scriptName, relaySHA: bundledRelay.sha256)
         relayURL = url.absoluteString
         if agentSecret != secret { secret = agentSecret }
+        if !isPreview, Keychain.read("agentSecret") != agentSecret {
+            log("Couldn't save the relay's secret in the Keychain: after Porchlight restarts, update the relay to connect again")
+        }
         log("Relay deployed at \(url.absoluteString)")
         restart()
         return url
@@ -439,7 +472,9 @@ final class AppModel {
 
     static func newSecret() -> String {
         var bytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            fatalError("No secure random bytes available")
+        }
         return bytes.map { String(format: "%02x", $0) }.joined()
     }
 
@@ -450,7 +485,7 @@ final class AppModel {
             approvalWaiters[request.id] = continuation
             pendingApprovals.append(request)
             log("\(request.clientName) wants to run \(request.tool) on \(request.server)")
-            promptPanel.update(bringToFront: true)
+            promptPanel.update()
             Task {
                 try? await Task.sleep(for: request.queuedAt == nil ? Self.approvalTimeout : Self.queuedApprovalTimeout)
                 if approvalWaiters[request.id] != nil {
@@ -474,7 +509,7 @@ final class AppModel {
     }
 
     func showPendingPrompt() {
-        promptPanel.update(bringToFront: true)
+        promptPanel.update(focus: true)
     }
 
     private func recordActivity(_ event: ActivityEvent) {
@@ -512,10 +547,23 @@ final class AppModel {
     /// Revokes every connection the app has.
     func revoke(_ app: ConnectedApp) {
         log("Revoked \(app.latest.clientName)")
-        clientAccess[app.id] = nil
+        // No servers rather than no setting (which means all), in case a connection outlives
+        // the revoke. Approving the app again sets its access afresh.
+        clientAccess[app.id] = []
         guard let client else { return }
         let grants = app.connections.map(\.id)
         Task { for grant in grants { await client.revokeClient(grant) } }
+    }
+
+    /// After switching to another relay (or deploying from a new Mac), apps connected before
+    /// have no access settings here, which would mean all servers. They start with none.
+    private func lockUnknownApps() {
+        guard defaults.bool(forKey: "lockUnknownApps") else { return }
+        defaults.set(false, forKey: "lockUnknownApps")
+        let unknown = Set(clients.map(\.clientID)).subtracting(clientAccess.keys)
+        guard !unknown.isEmpty else { return }
+        for clientID in unknown { clientAccess[clientID] = [] }
+        log("\(unknown.count) app(s) connected to this relay before can't use any servers until you choose in Settings → Apps")
     }
 
     /// Asks the relay for the current list of apps.
@@ -603,14 +651,11 @@ final class AppModel {
         switch event {
         case .pairingRequested(let request):
             guard !pendingPairings.contains(where: { $0.id == request.id }) else { return }
-            // A verified domain is safe to fetch an icon from before approval; an unverified
-            // app's redirect host waits until it's approved.
-            if let domain = request.clientDomain, !request.clientID.isEmpty {
-                icons.learnWebsite(domain, for: IconStore.key(app: request.clientID))
-            }
+            // Anyone can ask to connect, so nothing is fetched for a request (like its icon)
+            // until it's approved.
             pendingPairings.append(request)
             log("\(request.clientName) wants to connect (code \(request.formattedCode))")
-            promptPanel.update(bringToFront: true)
+            promptPanel.update()
             Task {
                 try? await Task.sleep(for: Self.pairingLifetime)
                 pendingPairings.removeAll { $0.id == request.id }
@@ -618,6 +663,7 @@ final class AppModel {
             }
         case .clientsChanged(let clients):
             self.clients = clients.sorted { $0.createdAt > $1.createdAt }
+            lockUnknownApps()
             scheduleCatalogPush()
         case .queuedFinished(let item, let outcome):
             queuedFinished(item, outcome)

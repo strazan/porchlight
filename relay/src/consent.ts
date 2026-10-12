@@ -38,7 +38,7 @@ ${script ? `<script>${script}</script>` : ""}
 </html>`;
 }
 
-export type Pairing = { id: string; code: string } | { offline: true };
+export type Pairing = { id: string; code: string } | { offline: true } | { busy: true };
 
 /**
  * Shows the code the owner will see on their Mac, then polls until they decide and posts
@@ -57,6 +57,17 @@ export function pairingPage(info: PairingInfo, handle: string, pairing: Pairing)
   <input type="hidden" name="pairing" value="${"id" in pairing ? escape(pairing.id) : ""}">
   <input type="hidden" name="decision" value="deny">
 </form>`;
+
+	if ("busy" in pairing) {
+		return page(
+			"Porchlight is busy",
+			`<div class="bulb">💡</div>
+<h1>Too many requests are waiting</h1>
+<p>Several connection requests are already waiting for an answer on your Mac.</p>
+<p>Answer or dismiss them in Porchlight, or wait a few minutes, then try again.</p>
+<div class="actions"><a class="button" href="">Try again</a></div>`,
+		);
+	}
 
 	if (!("id" in pairing)) {
 		return page(

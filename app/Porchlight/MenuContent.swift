@@ -93,8 +93,11 @@ struct MenuContent: View {
     }
 
     private var waitingSummary: String? {
-        if let request = model.pendingPairings.first { return "\(request.clientName) wants to connect" }
-        if let request = model.pendingApprovals.first { return "\(request.clientName) wants to use \(request.title ?? request.tool)" }
+        switch model.currentPrompt {
+        case .pairing(let request): return "\(request.clientName) wants to connect"
+        case .approval(let request): return "\(request.clientName) wants to use \(request.title ?? request.tool)"
+        case nil: break
+        }
         return nil
     }
 

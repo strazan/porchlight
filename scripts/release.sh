@@ -26,7 +26,10 @@ if [ "$PUBLISH" = "--publish" ] && [ -n "$(git status --porcelain)" ]; then
 fi
 
 echo "→ building $VERSION"
-make -s relay-bundle >/dev/null
+# The app ships the relay bundle that's committed; it must match relay/ at this commit.
+(cd relay && npm ci --silent && node scripts/bundle.mjs --check) || {
+  echo "error: the bundled relay is out of date; run make relay-bundle and commit it" >&2; exit 1
+}
 xcodebuild -project app/Porchlight.xcodeproj -scheme Porchlight -configuration Release \
   -destination "generic/platform=macOS" -derivedDataPath app/build -quiet \
   MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$(git rev-list --count HEAD)" \

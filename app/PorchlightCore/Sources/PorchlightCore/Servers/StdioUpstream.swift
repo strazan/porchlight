@@ -105,7 +105,7 @@ public actor StdioUpstream: Upstream {
         let child = StdioProcess(command: command, environment: environment, log: log)
         try child.start()
         process = child
-        log("started: \(command.joined(separator: " "))")
+        log("started: \(loggableCommandLine(command))")
         Task {
             for await message in child.messages { await self.route(message) }
             // Answer waiters as soon as output ends; the exit status can take a moment longer.

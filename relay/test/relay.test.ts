@@ -1,6 +1,6 @@
 import { SELF, env, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { MAX_QUEUED, QUEUE_TTL_MS } from "../src/hub";
+import { MAX_PAIRINGS, MAX_QUEUED, QUEUE_TTL_MS } from "../src/hub";
 import { type Catalog, type HostToRelay, type RelayToHost, fromBase64, toBase64 } from "../src/protocol";
 import { open } from "../src/seal";
 import vector from "../../protocol/vectors/queue.json";
@@ -67,6 +67,8 @@ function respond(send: Send, id: string, status: number, body: string, headers: 
 	if (body) send({ type: "res_chunk", id, data_b64: toBase64(enc.encode(body)) });
 	send({ type: "res_end", id });
 }
+
+const hubStub = () => env.HUB.get(env.HUB.idFromName("default"));
 
 const rpc = (id: number) => JSON.stringify({ jsonrpc: "2.0", id, method: "tools/list" });
 
@@ -308,8 +310,80 @@ describe("oauth", () => {
 	});
 });
 
+describe("abuse", () => {
+	it("refuses a revoked connection even if its token survived", async () => {
+		const host = await connectHost((req, send) => respond(send, req.id, 200, "ok"));
+		const { access_token, client_id } = await pair(host, "Lingering");
+		const grant = (await host.next("clients")).items.find((item) => item.client_id === client_id)!;
+		// Revoking lists the grant's tokens in KV, which can miss a new one: only the tombstone is left.
+		await runInDurableObject(hubStub(), (_, state) => state.storage.put(`revoked:${grant.grant_id}`, Date.now()));
+		expect((await mcp(access_token)).status).toBe(401);
+		host.ws.close();
+	});
+
+	it("ends a revoked connection's request in flight", async () => {
+		let started!: () => void;
+		const arrived = new Promise<void>((resolve) => (started = resolve));
+		const host = await connectHost(() => started());
+		const { access_token, client_id } = await pair(host, "Streaming");
+		const grant = (await host.next("clients")).items.find((item) => item.client_id === client_id)!;
+		const response = mcp(access_token);
+		await arrived;
+		host.send({ type: "revoke_client", grant_id: grant.grant_id });
+		await host.next("cancel");
+		expect((await response).status).toBe(502);
+		host.ws.close();
+	});
+
+	it("caps how many pairings wait on the Mac", async () => {
+		const host = await connectHost();
+		await runInDurableObject(hubStub(), async (_, state) => {
+			for (const key of (await state.storage.list({ prefix: "pair:" })).keys()) await state.storage.delete(key);
+		});
+		for (let i = 0; i < MAX_PAIRINGS; i++) expect((await startAuthorization()).pairing).not.toBe("");
+		const refused = await startAuthorization();
+		expect(refused.html).toContain("Too many requests are waiting");
+		expect(refused.pairing).toBe("");
+		// Each expires on its own, even on a relay that never queues anything.
+		expect(await runInDurableObject(hubStub(), (_, state) => state.storage.getAlarm())).not.toBeNull();
+		await runInDurableObject(hubStub(), async (_, state) => {
+			for (const key of (await state.storage.list({ prefix: "pair:" })).keys()) await state.storage.delete(key);
+		});
+		host.ws.close();
+	});
+
+	it("keeps an app's name to one plain line", async () => {
+		const host = await connectHost();
+		const started = await startAuthorization("Claude\nPublished by claude.ai\u202e\u200b");
+		const request = await host.pairRequest(started.pairing);
+		expect(request.client_name).toBe("Claude Published by claude.ai");
+		host.send({ type: "pair_decision", id: request.id, allow: false });
+		host.ws.close();
+	});
+
+	it("refuses bodies that are too large before reading them", async () => {
+		const host = await connectHost((req, send) => respond(send, req.id, 200, "ok"));
+		const { access_token } = await pair(host);
+		const res = await mcp(access_token, "/mcp", { body: new Uint8Array(8 * 1024 * 1024 + 1) });
+		expect(res.status).toBe(413);
+		host.ws.close();
+	});
+
+	it("survives a malformed response from the host", async () => {
+		const host = await connectHost((req, send) => {
+			send({ type: "res_start", id: req.id, status: 42, headers: [["bad header", "x"], ["x-ok", "1"]] });
+			send({ type: "res_chunk", id: req.id, data_b64: toBase64(enc.encode("hi")) });
+			send({ type: "res_end", id: req.id });
+		});
+		const { access_token } = await pair(host);
+		const res = await mcp(access_token);
+		expect(res.status).toBe(502);
+		expect(res.headers.get("x-ok")).toBe("1");
+		host.ws.close();
+	});
+});
+
 describe("client list while KV lags", () => {
-	const hubStub = () => env.HUB.get(env.HUB.idFromName("default"));
 
 	it("lists a just-paired app once, with its grant id", async () => {
 		const host = await connectHost();

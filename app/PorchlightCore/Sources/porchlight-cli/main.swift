@@ -141,7 +141,7 @@ let router = Router(
 routerBox.withLock { $0 = router }
 await router.apply(servers)
 for server in servers where server.enabled {
-    stderrLog("serving \(server.name): \(server.commandLineString)")
+    stderrLog("serving \(server.name): \(server.transport == .http ? loggableURL(server.url) : loggableCommandLine(server.commandLine))")
 }
 
 /// The queue key in `path`, made and saved there (readable only by you) if it's missing.

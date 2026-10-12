@@ -200,7 +200,7 @@ final class IconStore {
     nonisolated private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil
-        return URLSession(configuration: configuration)
+        return URLSession(configuration: configuration, delegate: PublicRedirectsOnly(), delegateQueue: nil)
     }()
 
     /// Square, 256 points, PNG: the same shape whatever the source.
@@ -238,4 +238,14 @@ enum IconError: LocalizedError {
     case notAnImage
 
     var errorDescription: String? { "That file isn't an image Porchlight can use." }
+}
+
+/// Icon fetches follow redirects only to public HTTPS hosts (see `SiteIcon.isPublic`).
+private final class PublicRedirectsOnly: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        request.url.map(SiteIcon.isPublic) == true ? request : nil
+    }
 }

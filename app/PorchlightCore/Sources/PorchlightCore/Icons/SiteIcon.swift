@@ -9,7 +9,7 @@ public enum SiteIcon {
         for tag in html.matches(of: /<link\b[^>]*>/.ignoresCase()) {
             let attributes = Self.attributes(String(tag.output))
             guard let rel = attributes["rel"]?.lowercased(), let href = attributes["href"],
-                  rel.contains("icon"), let url = URL(string: href, relativeTo: base)?.absoluteURL
+                  rel.contains("icon"), let url = URL(string: href, relativeTo: base)?.absoluteURL, isPublic(url)
             else { continue }
             let size = attributes["sizes"].flatMap { sizes in
                 sizes.split(separator: " ").compactMap { Int($0.split(separator: "x").first ?? "") }.max()
@@ -23,6 +23,15 @@ public enum SiteIcon {
         }
         var seen = Set<URL>()
         return scored.sorted { $0.score > $1.score }.map(\.url).filter { seen.insert($0).inserted }
+    }
+
+    /// HTTPS on a public host name: a page can't point icon fetches at this Mac or its network.
+    public static func isPublic(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", let host = url.host()?.lowercased(), host.contains(".") else { return false }
+        let local = host.hasSuffix(".local") || host.hasSuffix(".localhost") || host.hasSuffix(".internal")
+            || host.hasSuffix(".lan") || host.hasSuffix(".home.arpa")
+        let ipLiteral = host.contains(":") || host.allSatisfy { $0.isNumber || $0 == "." }
+        return !local && !ipLiteral
     }
 
     /// The conventional locations, for sites whose page can't be read.

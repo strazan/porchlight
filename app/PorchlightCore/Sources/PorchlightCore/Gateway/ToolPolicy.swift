@@ -111,9 +111,28 @@ public struct ClientIdentity: Sendable, Equatable {
 
     init(headers request: HTTPRequest) {
         let decode = { (name: String) in request.header(name).flatMap { $0.removingPercentEncoding } ?? "" }
-        let name = decode("porchlight-client-name")
+        let name = displayName(decode("porchlight-client-name"))
         self.init(id: decode("porchlight-client-id"), name: name.isEmpty ? Self.unknown.name : name)
     }
+}
+
+/// Apps name themselves when they register. Keeps a name to one plain line, so it can't fake a
+/// second line ("Published by…") or reorder text with direction overrides.
+public func displayName(_ name: String, limit: Int = 80) -> String {
+    var plain = ""
+    var space = false
+    for scalar in name.unicodeScalars {
+        // Invisible formatting (direction overrides, zero-width spaces) goes; breaks become spaces.
+        if scalar.properties.generalCategory == .format { continue }
+        if scalar.properties.generalCategory == .control || scalar.properties.isWhitespace {
+            space = !plain.isEmpty
+        } else {
+            if space { plain.unicodeScalars.append(" ") }
+            plain.unicodeScalars.append(scalar)
+            space = false
+        }
+    }
+    return plain.count > limit ? String(plain.prefix(limit)) : plain
 }
 
 /// One request through Porchlight, for the activity log.

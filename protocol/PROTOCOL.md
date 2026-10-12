@@ -36,7 +36,7 @@ chunks are base64 (`*_b64`) so that frames stay valid JSON.
 |---|---|---|
 | `req` | `id`, `method`, `path`, `headers` (`[[name, value], …]`), `body_b64` | An incoming HTTP request. `path` includes the query string. |
 | `cancel` | `id` | The client went away; stop work and send nothing more for `id`. |
-| `pair_request` | `id`, `code`, `client_id`, `client_name`, `client_domain?`, `redirect_host`, `loopback` | An app is on the consent page. Show its details and `code` (the page shows the same code) and answer with `pair_decision`. Re-sent on reconnect while pending; expires after 10 minutes. |
+| `pair_request` | `id`, `code`, `client_id`, `client_name`, `client_domain?`, `redirect_host`, `loopback` | An app is on the consent page. Show its details and `code` (the page shows the same code) and answer with `pair_decision`. Re-sent on reconnect while pending; expires after 10 minutes. At most 5 wait at once (anyone can open the consent page); more get a "try again later" page. `client_name` is one plain line of at most 80 characters. |
 | `clients` | `items: [{grant_id, client_id, client_name, client_domain?, created_at}]` | The apps that currently have access. Sent after `list_clients`, after a pairing completes, and after `revoke_client`. |
 | `queued` | `id`, `client_id`, `client_name`, `path`, `queued_at` (Unix ms), `sealed` | A request saved while the host was offline (see [Offline queue](#offline-queue)). Sent on connect, oldest first, and again on every connect until `queued_done`. |
 | `pong` | — | Reply to the host's `ping`. |
@@ -51,7 +51,7 @@ chunks are base64 (`*_b64`) so that frames stay valid JSON.
 | `res_end` | `id` | Response complete. |
 | `pair_decision` | `id`, `allow` | The owner's answer to a `pair_request`. |
 | `list_clients` | — | Ask for a `clients` frame. |
-| `revoke_client` | `grant_id` | Revoke an app's access immediately. Also drops what it queued. |
+| `revoke_client` | `grant_id` | Revoke an app's access immediately: the relay refuses the grant's requests from then on (even with a token KV hasn't deleted yet), ends ones in flight, and drops what it queued. |
 | `offline_catalog` | `client_id`, `catalog` (or `null` to forget) | What this app sees while the host is offline. |
 | `queued_done` | `id` | A `queued` request has been handled (run, declined or unreadable); the relay deletes it. |
 | `ping` | — | Keepalive, every ~30 s. Must be exactly `{"type":"ping"}` (see below). |

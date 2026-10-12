@@ -84,8 +84,8 @@ public struct PairingRequest: Sendable, Identifiable, Equatable {
         self.id = id
         self.code = code
         self.clientID = clientID
-        self.clientName = clientName
-        self.clientDomain = clientDomain
+        self.clientName = displayName(clientName)
+        self.clientDomain = clientDomain.map { displayName($0, limit: 253) }
         self.redirectHost = redirectHost
         self.loopback = loopback
     }
@@ -108,8 +108,8 @@ public struct PairedClient: Sendable, Identifiable, Equatable {
     public init(id: String, clientID: String, clientName: String, clientDomain: String?, createdAt: Date) {
         self.id = id
         self.clientID = clientID
-        self.clientName = clientName
-        self.clientDomain = clientDomain
+        self.clientName = displayName(clientName)
+        self.clientDomain = clientDomain.map { displayName($0, limit: 253) }
         self.createdAt = createdAt
     }
 }
@@ -126,7 +126,7 @@ public struct QueuedRequest: Sendable, Equatable {
     public init(id: String, clientID: String, clientName: String, path: String, queuedAt: Date, sealed: Data) {
         self.id = id
         self.clientID = clientID
-        self.clientName = clientName
+        self.clientName = displayName(clientName)
         self.path = path
         self.queuedAt = queuedAt
         self.sealed = sealed

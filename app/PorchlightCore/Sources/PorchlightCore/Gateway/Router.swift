@@ -233,8 +233,14 @@ public actor Router: HTTPHandler {
     }
 
     func authorize(server: String, tool: String, arguments: JSONValue, client: ClientIdentity, queuedAt: Date? = nil) async -> Decision {
-        guard let config = running[server]?.config else { return .allowed } // the call fails on its own
+        guard let config = running[server]?.config else { return .denied("\(server) isn't running in Porchlight.") }
         let info = await toolInfo(server: server, tool: tool)
+        // The relay saved this call by the catalog it had then; queue settings may have changed since.
+        if queuedAt != nil, !config.toolPolicy.queuesOffline(
+            tool, readOnly: info?.readOnly ?? false, destructive: info?.destructive ?? true
+        ) {
+            return .denied("\(tool) on \(server) doesn't run from requests saved while the Mac was offline.")
+        }
         switch config.toolPolicy.permission(for: tool, readOnly: info?.readOnly ?? false) {
         case .allow:
             return .allowed

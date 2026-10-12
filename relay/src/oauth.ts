@@ -51,6 +51,8 @@ async function forwardToHost(
 	env: Env,
 	ctx: ExecutionContext & { props?: GrantProps; auth?: { clientId?: string; token?: string } },
 ): Promise<Response> {
+	// The Mac decides what each app may use by this id: never forward a request without one.
+	if (!ctx.auth?.clientId) return new Response("Unauthorized", { status: 401 });
 	const headers = new Headers(request.headers);
 	for (const name of [...headers.keys()]) {
 		if (name.startsWith("porchlight-")) headers.delete(name);
@@ -89,7 +91,7 @@ async function showAuthorize(request: Request, env: Env, origin: string): Promis
 	const consent = await oauth.beginConsent(authRequest);
 	const info: PairingInfo = {
 		client_id: authRequest.clientId,
-		client_name: details.clientName,
+		client_name: cleanName(details.clientName),
 		client_domain: details.clientDomain,
 		redirect_host: details.redirectHost,
 		loopback: details.redirectIsLoopback,
@@ -134,6 +136,19 @@ async function submitAuthorize(request: Request, env: Env, origin: string): Prom
 	});
 	approved.headers.set("location", redirectTo);
 	return new Response(null, { status: 302, headers: approved.headers });
+}
+
+/**
+ * Apps name themselves when they register. Keep names to one plain line, so one can't fake
+ * a second line ("Published by…") or reorder text with direction overrides on the Mac.
+ */
+export function cleanName(name: string): string {
+	const plain = name
+		.replace(/\p{Cf}/gu, "")
+		.replace(/[\p{Cc}\u2028\u2029]/gu, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	return [...plain].slice(0, 80).join("") || "Unnamed app";
 }
 
 /** Access tokens are `userId:grantId:secret`, like codes; "" if that ever changes. */

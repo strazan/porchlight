@@ -195,24 +195,25 @@ struct PlaceholderResolver {
     func expand(_ arg: String) throws -> [String] {
         if arg.hasPrefix("${user_config."), arg.hasSuffix("}"), arg.filter({ $0 == "$" }).count == 1 {
             let key = String(arg.dropFirst("${user_config.".count).dropLast())
-            if case .array(let items)? = values[key] { return try items.map { try resolve(text($0, key: key)) } }
+            if case .array(let items)? = values[key] { return try items.map { try resolve(text($0, key: key), depth: 1) } }
         }
         return [try resolve(arg)]
     }
 
-    func resolve(_ text: String) throws -> String {
+    /// `depth` counts settings resolved inside settings, so one that refers to itself ends.
+    func resolve(_ text: String, depth: Int = 0) throws -> String {
         var result = ""
         var rest = Substring(text)
         while let start = rest.range(of: "${"), let end = rest[start.upperBound...].firstIndex(of: "}") {
             result += rest[..<start.lowerBound]
             let name = String(rest[start.upperBound..<end])
-            result += try value(of: name, raw: String(rest[start.lowerBound...end]))
+            result += try value(of: name, raw: String(rest[start.lowerBound...end]), depth: depth)
             rest = rest[rest.index(after: end)...]
         }
         return result + rest
     }
 
-    private func value(of name: String, raw: String) throws -> String {
+    private func value(of name: String, raw: String, depth: Int) throws -> String {
         switch name {
         case "__dirname": return directory
         case "HOME": return home
@@ -223,10 +224,12 @@ struct PlaceholderResolver {
         default:
             guard name.hasPrefix("user_config.") else { return raw }
             let key = String(name.dropFirst("user_config.".count))
-            guard let value = values[key] else { throw Missing.setting(key) }
-            if case .array(let items) = value { return try items.map { try resolve(text($0, key: key)) }.joined(separator: ",") }
+            guard let value = values[key], depth < 8 else { throw Missing.setting(key) }
+            if case .array(let items) = value {
+                return try items.map { try resolve(text($0, key: key), depth: depth + 1) }.joined(separator: ",")
+            }
             // Defaults can use placeholders too, like ${HOME}/Documents.
-            return try resolve(text(value, key: key))
+            return try resolve(text(value, key: key), depth: depth + 1)
         }
     }
 

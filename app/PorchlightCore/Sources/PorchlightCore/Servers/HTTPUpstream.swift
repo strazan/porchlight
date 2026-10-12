@@ -134,7 +134,7 @@ public actor HTTPUpstream: Upstream {
         initializeResult = result
         _ = try await post(.object(["jsonrpc": .string("2.0"), "method": .string("notifications/initialized")]), onProgress: nil)
         status = .running
-        log("connected to \(url.absoluteString)")
+        log("connected to \(loggableURL(url.absoluteString))")
     }
 
     // MARK: Transport
@@ -236,8 +236,9 @@ enum HTTPUpstreamError: LocalizedError {
 
 /// Accepts self-signed certificates for loopback hosts only. Local servers like Obsidian's
 /// serve HTTPS with a certificate they generated; anything off this machine is verified
-/// normally.
-final class LoopbackTrust: NSObject, URLSessionDelegate, Sendable {
+/// normally. Follows redirects only within the same origin, so the server's headers (often
+/// an API key) never go anywhere else.
+final class LoopbackTrust: NSObject, URLSessionTaskDelegate, Sendable {
     static let loopbackHosts: Set<String> = ["127.0.0.1", "localhost", "::1", "[::1]"]
 
     func urlSession(
@@ -250,5 +251,26 @@ final class LoopbackTrust: NSObject, URLSessionDelegate, Sendable {
               let trust = space.serverTrust
         else { return (.performDefaultHandling, nil) }
         return (.useCredential, URLCredential(trust: trust))
+    }
+
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        Self.sameOrigin(task.originalRequest?.url, request.url) ? request : nil
+    }
+
+    static func sameOrigin(_ a: URL?, _ b: URL?) -> Bool {
+        guard let a, let b else { return false }
+        return a.scheme?.lowercased() == b.scheme?.lowercased() && a.host()?.lowercased() == b.host()?.lowercased()
+            && (a.port ?? defaultPort(a)) == (b.port ?? defaultPort(b))
+    }
+
+    private static func defaultPort(_ url: URL) -> Int? {
+        switch url.scheme?.lowercased() {
+        case "https": 443
+        case "http": 80
+        default: nil
+        }
     }
 }
