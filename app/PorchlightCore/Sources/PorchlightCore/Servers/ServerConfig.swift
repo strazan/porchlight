@@ -1,7 +1,7 @@
 import Foundation
 
 /// A local MCP server Porchlight serves: a command it runs (stdio), or a server already
-/// listening on this machine (Streamable HTTP). Same shape as the `mcpServers` entries in
+/// listening on this Mac or its network (Streamable HTTP). Same shape as the `mcpServers` entries in
 /// Claude Desktop and Claude Code configs.
 public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
     public enum Transport: String, Codable, Sendable, Hashable, CaseIterable {
@@ -60,7 +60,8 @@ public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
         case id, name, transport, command, args, env, url, headers, enabled, toolPolicy
     }
 
-    // Lists saved before HTTP servers existed have no transport, url or headers.
+    /// Only `id` and `name` are required, for server lists written by hand (see
+    /// `porchlight-cli --config`): a bare `command` is a stdio server.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -162,11 +163,15 @@ public struct ServerConfig: Codable, Sendable, Hashable, Identifiable {
 // MARK: - Headers
 
 extension ServerConfig {
+    private static let bearerPrefix = "bearer "
+    /// What an HTTP header name may contain besides letters and digits.
+    private static let headerNameSymbols = "!#$%&'*+.^_`|~-"
+
     /// `Authorization: Bearer <token>`, the usual way local servers take an API key.
     public var bearerToken: String {
         get {
-            guard let value = headers["Authorization"], value.lowercased().hasPrefix("bearer ") else { return "" }
-            return String(value.dropFirst("bearer ".count)).trimmingCharacters(in: .whitespaces)
+            guard let value = headers["Authorization"], value.lowercased().hasPrefix(Self.bearerPrefix) else { return "" }
+            return String(value.dropFirst(Self.bearerPrefix.count)).trimmingCharacters(in: .whitespaces)
         }
         set {
             let token = Self.bearerToken(from: newValue)
@@ -179,12 +184,13 @@ extension ServerConfig {
     public static func bearerToken(from pasted: String) -> String {
         var token = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
         if let header = parseHeader(token), header.name.lowercased() == "authorization" { token = header.value }
-        if token.lowercased().hasPrefix("bearer ") { token = String(token.dropFirst("bearer ".count)) }
+        if token.lowercased().hasPrefix(bearerPrefix) { token = String(token.dropFirst(bearerPrefix.count)) }
         return token.trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: "\"',")))
     }
 
     /// Parses a header line: `Name: value`, or the JSON form `"Name": "value"`.
     public static func parseHeader(_ line: String) -> (name: String, value: String)? {
+        // The name's characters are `headerNameSymbols`, letters and digits.
         let pattern = /^\s*"?([A-Za-z0-9!#$%&'*+.^_`|~-]+)"?\s*:\s*"?(.*?)"?\s*,?\s*$/
         guard let match = line.wholeMatch(of: pattern) else { return nil }
         return (String(match.1), String(match.2))
@@ -192,85 +198,6 @@ extension ServerConfig {
 
     /// An HTTP header name: a token of letters, digits and a few symbols, no spaces or colons.
     public static func isValidHeaderName(_ name: String) -> Bool {
-        !name.isEmpty && name.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "!#$%&'*+.^_`|~-".contains($0)) }
-    }
-
-    /// Fixes headers where a whole `Name: value` line ended up as the name.
-    public func repairingHeaders() -> ServerConfig {
-        var repaired = self
-        repaired.headers = [:]
-        for (name, value) in headers {
-            if !Self.isValidHeaderName(name), value.isEmpty, let header = Self.parseHeader(name) {
-                repaired.headers[header.name] = header.value
-            } else {
-                repaired.headers[name] = value
-            }
-        }
-        return repaired
-    }
-}
-
-/// Quotes an argument for display only if it needs it.
-/// A command line for logs, with what looks like a credential masked: the value after a flag
-/// like `--api-key`, `--token=…`, and the query of any URL.
-public func loggableCommandLine(_ command: [String]) -> String {
-    let sensitive = /(?i)(key|token|secret|passw|auth|credential|bearer)/
-    var masked: [String] = []
-    var maskNext = false
-    for arg in command {
-        defer { maskNext = arg.hasPrefix("-") && !arg.contains("=") && arg.contains(sensitive) }
-        if maskNext {
-            masked.append("***")
-        } else if arg.hasPrefix("-"), let eq = arg.firstIndex(of: "="), arg[..<eq].contains(sensitive) {
-            masked.append(String(arg[...eq]) + "***")
-        } else {
-            masked.append(shellQuoted(loggableURL(arg)))
-        }
-    }
-    return masked.joined(separator: " ")
-}
-
-/// A URL for logs, without its query (where tokens often go) or password.
-public func loggableURL(_ string: String) -> String {
-    guard var parts = URLComponents(string: string), parts.scheme != nil, parts.host != nil,
-          parts.query != nil || parts.password != nil
-    else { return string }
-    if parts.query != nil { parts.percentEncodedQuery = "***" }
-    if parts.password != nil { parts.percentEncodedPassword = "***" }
-    return parts.string ?? string
-}
-
-public func shellQuoted(_ arg: String) -> String {
-    let safe = arg.allSatisfy { $0.isLetter || $0.isNumber || "-_./:@=+,~%".contains($0) }
-    if safe, !arg.isEmpty { return arg }
-    return "'" + arg.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
-}
-
-/// Reads and writes the server list as JSON.
-public struct ServerStore: Sendable {
-    public let url: URL
-
-    public init(url: URL) {
-        self.url = url
-    }
-
-    /// `~/Library/Application Support/Porchlight/servers.json`
-    public static var standard: ServerStore {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return ServerStore(url: support.appending(path: "Porchlight/servers.json"))
-    }
-
-    public func load() -> [ServerConfig]? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode([ServerConfig].self, from: data)
-    }
-
-    public func save(_ servers: [ServerConfig]) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        // May hold API keys in `env`: readable by this user only.
-        try encoder.encode(servers).write(to: url, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        !name.isEmpty && name.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || headerNameSymbols.contains($0)) }
     }
 }

@@ -1,28 +1,19 @@
 import Foundation
 
-public typealias ProgressSink = @Sendable (JSONValue) async -> Void
-
-/// Something that answers MCP messages. `StreamableHTTP` puts it on the wire.
-public protocol MCPEndpoint: Sendable {
-    /// Answers a request. The response must carry the request's id.
-    func call(_ request: JSONValue, onProgress: ProgressSink?) async -> JSONValue
-    func notify(_ notification: JSONValue) async
-}
-
 /// The server side of MCP's Streamable HTTP transport, for requests arriving via the relay.
 ///
 /// `tools/call` is answered as an SSE stream with keepalives, so slow tools don't hit the
 /// relay's start timeout and progress notifications reach the caller. Everything else is
 /// plain JSON. There is no GET stream or session handling yet.
-public enum StreamableHTTP {
+enum StreamableHTTP {
     static let keepaliveInterval: Duration = .seconds(15)
 
-    public static func serve(_ request: HTTPRequest, _ responder: HTTPResponder, endpoint: some MCPEndpoint) async {
+    static func serve(_ request: HTTPRequest, _ responder: HTTPResponder, endpoint: some MCPEndpoint) async {
         guard request.method == "POST" else {
             return await responder.respond(405, [("allow", "POST")])
         }
         guard let message = try? JSONValue.parse(request.body) else {
-            return await respondJSON(responder, 400, .rpcError(id: nil, code: -32700, message: "Parse error"))
+            return await respondJSON(responder, 400, .rpcError(id: nil, code: .parseError, message: "Parse error"))
         }
 
         if case .array(let batch) = message {

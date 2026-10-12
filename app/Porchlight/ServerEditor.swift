@@ -35,7 +35,6 @@ struct ServerEditor: View {
     }
 
     init(server: ServerConfig, isNew: Bool) {
-        let server = server.repairingHeaders()
         self.isNew = isNew
         _draft = State(initialValue: server)
         _commandLine = State(initialValue: server.commandLineString)
@@ -248,7 +247,7 @@ struct ServerEditor: View {
         Task {
             switch await model.probe(config) {
             case .success(let found):
-                test = .passed("\(found.serverName) · \(found.toolCount) tool\(found.toolCount == 1 ? "" : "s")")
+                test = .passed("\(found.serverName) · \(found.tools.count) tool\(found.tools.count == 1 ? "" : "s")")
             case .failure(let error):
                 test = .failed(UpstreamStatus.explain(error.message))
             }

@@ -8,31 +8,37 @@ import Foundation
 ///   it (a restarted server answers 404).
 /// - Reads responses as JSON or SSE, forwarding progress notifications.
 /// - Trusts self-signed certificates only on loopback addresses.
-public actor HTTPUpstream: Upstream {
-    public nonisolated let name: String
-    private let url: URL
+actor HTTPUpstream: Upstream {
+    nonisolated let name: String
+    /// Nil for a config whose URL doesn't parse: every request then fails, saying so.
+    private let url: URL?
     private let headers: [String: String]
     private let log: LogSink
-    private let onStatus: @Sendable (UpstreamStatus) -> Void
+    private let onStatus: UpstreamStatusSink
     private let session: URLSession
+
+    /// Tools can take a long time; a request finishes when the server answers.
+    static let requestTimeout: TimeInterval = 24 * 3600
+    static let initializeTimeout: TimeInterval = 60
+    /// How much of an error response to quote.
+    static let errorBodyLimit = 300
 
     private var nextID = 0
     private var sessionID: String?
-    private var initializeResult: JSONValue?
-    public var handshake: JSONValue? { initializeResult }
+    private(set) var handshake: JSONValue?
     private var negotiatedVersion: String?
     private var connecting: Task<Void, Error>?
 
-    public private(set) var status: UpstreamStatus = .idle {
+    private(set) var status: UpstreamStatus = .idle {
         didSet { if status != oldValue { onStatus(status) } }
     }
 
-    public init(
+    init(
         name: String,
-        url: URL,
+        url: URL?,
         headers: [String: String] = [:],
         log: @escaping LogSink = stderrLog,
-        onStatus: @escaping @Sendable (UpstreamStatus) -> Void = { _ in }
+        onStatus: @escaping UpstreamStatusSink = { _ in }
     ) {
         self.name = name
         self.url = url
@@ -40,21 +46,20 @@ public actor HTTPUpstream: Upstream {
         self.log = log
         self.onStatus = onStatus
         let configuration = URLSessionConfiguration.ephemeral
-        // Tools can take a long time; the request finishes when the server answers.
-        configuration.timeoutIntervalForRequest = 24 * 60 * 60
-        session = URLSession(configuration: configuration, delegate: LoopbackTrust(), delegateQueue: nil)
+        configuration.timeoutIntervalForRequest = Self.requestTimeout
+        session = URLSession(configuration: configuration, delegate: HTTPUpstreamDelegate(), delegateQueue: nil)
     }
 
-    public func initialize() async -> JSONValue {
+    func initialize() async -> JSONValue {
         do {
             try await ensureConnected()
         } catch {
-            return .rpcError(id: nil, code: -32603, message: "Could not reach \(name): \(error.localizedDescription)")
+            return .rpcError(id: nil, code: .internalError, message: "Could not reach \(name): \(error.localizedDescription)")
         }
-        return .object(["jsonrpc": .string("2.0"), "id": .null, "result": initializeResult ?? .object([:])])
+        return .rpcResult(handshake ?? .object([:]))
     }
 
-    public func request(_ message: JSONValue, onProgress: ProgressSink?) async -> JSONValue {
+    func request(_ message: JSONValue, onProgress: ProgressSink?) async -> JSONValue {
         var retried = false
         while true {
             do {
@@ -63,21 +68,21 @@ public actor HTTPUpstream: Upstream {
                 status = .running // it may have been unreachable before
                 response["id"] = .null
                 return response
-            } catch HTTPUpstreamError.sessionExpired where !retried {
+            } catch UpstreamError.sessionExpired where !retried {
                 log("session expired; reconnecting")
                 retried = true
-                initializeResult = nil
+                handshake = nil
                 sessionID = nil
             } catch is CancellationError {
-                return .rpcError(id: nil, code: -32800, message: "Request cancelled")
+                return .rpcError(id: nil, code: .requestCancelled, message: "Request cancelled")
             } catch {
                 status = .failed(error.localizedDescription)
-                return .rpcError(id: nil, code: -32603, message: "\(name): \(error.localizedDescription)")
+                return .rpcError(id: nil, code: .internalError, message: "\(name): \(error.localizedDescription)")
             }
         }
     }
 
-    public func notify(_ message: JSONValue) async {
+    func notify(_ message: JSONValue) async {
         do {
             try await ensureConnected()
             _ = try await post(message, onProgress: nil)
@@ -86,22 +91,21 @@ public actor HTTPUpstream: Upstream {
         }
     }
 
-    public func stop() async {
-        if let sessionID {
+    func stop() async {
+        if let sessionID, var request = try? baseRequest(method: "DELETE") {
             // Tell the server the session is over; it's fine if it doesn't support that.
-            var request = baseRequest(method: "DELETE")
             request.setValue(sessionID, forHTTPHeaderField: "Mcp-Session-Id")
             _ = try? await session.data(for: request)
         }
         sessionID = nil
-        initializeResult = nil
+        handshake = nil
         status = .idle
     }
 
     // MARK: Connection
 
     private func ensureConnected() async throws {
-        if initializeResult != nil { return }
+        if handshake != nil { return }
         if let connecting { return try await connecting.value }
         let task = Task { try await self.connect() }
         connecting = task
@@ -118,35 +122,27 @@ public actor HTTPUpstream: Upstream {
         status = .starting
         sessionID = nil
         negotiatedVersion = nil
-        let response = try await exchange(.object([
-            "jsonrpc": .string("2.0"),
-            "method": .string("initialize"),
-            "params": .object([
-                "protocolVersion": .string(StdioUpstream.protocolVersion),
-                "capabilities": .object([:]),
-                "clientInfo": .object(["name": .string("porchlight"), "version": .string(Porchlight.version)]),
-            ]),
-        ]), onProgress: nil)
+        let response = try await exchange(MCP.initializeRequest, onProgress: nil, timeout: Self.initializeTimeout)
         guard let result = response["result"] else {
-            throw HTTPUpstreamError.initializeFailed(response["error"]?["message"]?.stringValue ?? "no result")
+            throw UpstreamError.initializeFailed(response.failure ?? "no result")
         }
         negotiatedVersion = result["protocolVersion"]?.stringValue
-        initializeResult = result
-        _ = try await post(.object(["jsonrpc": .string("2.0"), "method": .string("notifications/initialized")]), onProgress: nil)
+        handshake = result
+        try await post(MCP.initializedNotification, onProgress: nil)
         status = .running
-        log("connected to \(loggableURL(url.absoluteString))")
+        log("connected to \(loggableURL(url?.absoluteString ?? ""))")
     }
 
     // MARK: Transport
 
     /// Sends a request under an internal id and returns the matching response.
-    private func exchange(_ message: JSONValue, onProgress: ProgressSink?) async throws -> JSONValue {
+    private func exchange(_ message: JSONValue, onProgress: ProgressSink?, timeout: TimeInterval? = nil) async throws -> JSONValue {
         let internalID = "pl-\(nextID)"
         nextID += 1
         var outgoing = message
         outgoing["id"] = .string(internalID)
-        guard let response = try await post(outgoing, onProgress: onProgress, awaiting: .string(internalID)) else {
-            throw HTTPUpstreamError.noResponse
+        guard let response = try await post(outgoing, onProgress: onProgress, awaiting: .string(internalID), timeout: timeout) else {
+            throw UpstreamError.noResponse
         }
         return response
     }
@@ -154,8 +150,11 @@ public actor HTTPUpstream: Upstream {
     /// POSTs one message. For a request, returns the response with id `awaiting`, read from
     /// a JSON body or an SSE stream; for a notification, nil.
     @discardableResult
-    private func post(_ message: JSONValue, onProgress: ProgressSink?, awaiting id: JSONValue? = nil) async throws -> JSONValue? {
-        var request = baseRequest(method: "POST")
+    private func post(
+        _ message: JSONValue, onProgress: ProgressSink?, awaiting id: JSONValue? = nil, timeout: TimeInterval? = nil
+    ) async throws -> JSONValue? {
+        var request = try baseRequest(method: "POST")
+        if let timeout { request.timeoutInterval = timeout }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
         if let sessionID { request.setValue(sessionID, forHTTPHeaderField: "Mcp-Session-Id") }
@@ -163,13 +162,13 @@ public actor HTTPUpstream: Upstream {
         request.httpBody = message.serialized()
 
         let (bytes, response) = try await session.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else { throw HTTPUpstreamError.noResponse }
+        guard let http = response as? HTTPURLResponse else { throw UpstreamError.noResponse }
         if let assigned = http.value(forHTTPHeaderField: "Mcp-Session-Id") { sessionID = assigned }
         if http.statusCode == 404, sessionID != nil, message.rpcMethod != "initialize" {
-            throw HTTPUpstreamError.sessionExpired
+            throw UpstreamError.sessionExpired
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw HTTPUpstreamError.status(http.statusCode, try await Self.prefix(of: bytes))
+            throw UpstreamError.status(http.statusCode, try await Self.prefix(of: bytes))
         }
         guard let id else { return nil }
 
@@ -200,7 +199,8 @@ public actor HTTPUpstream: Upstream {
         return nil
     }
 
-    private func baseRequest(method: String) -> URLRequest {
+    private func baseRequest(method: String) throws -> URLRequest {
+        guard let url else { throw UpstreamError.invalidURL }
         var request = URLRequest(url: url)
         request.httpMethod = method
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
@@ -211,43 +211,26 @@ public actor HTTPUpstream: Upstream {
         var data = Data()
         for try await byte in bytes {
             data.append(byte)
-            if data.count >= 300 { break }
+            if data.count >= errorBodyLimit { break }
         }
         return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
-enum HTTPUpstreamError: LocalizedError {
-    case initializeFailed(String)
-    case noResponse
-    case sessionExpired
-    case status(Int, String)
-
-    var errorDescription: String? {
-        switch self {
-        case .initializeFailed(let message): "initialize failed: \(message)"
-        case .noResponse: "The server closed the connection without answering"
-        case .sessionExpired: "The server no longer knows this session"
-        case .status(401, _), .status(403, _): "The server refused the request (check the Authorization header)"
-        case .status(let code, let body): body.isEmpty ? "HTTP \(code)" : "HTTP \(code): \(body)"
-        }
-    }
-}
-
-/// Accepts self-signed certificates for loopback hosts only. Local servers like Obsidian's
-/// serve HTTPS with a certificate they generated; anything off this machine is verified
-/// normally. Follows redirects only within the same origin, so the server's headers (often
-/// an API key) never go anywhere else.
-final class LoopbackTrust: NSObject, URLSessionTaskDelegate, Sendable {
-    static let loopbackHosts: Set<String> = ["127.0.0.1", "localhost", "::1", "[::1]"]
-
+/// How an HTTP upstream's connections are trusted:
+/// - Self-signed certificates are accepted for loopback hosts only. Local servers like
+///   Obsidian's serve HTTPS with a certificate they generated; anything off this Mac is
+///   verified normally.
+/// - Redirects are followed only within the same origin, so the server's headers (often an
+///   API key) never go anywhere else.
+final class HTTPUpstreamDelegate: NSObject, URLSessionTaskDelegate, Sendable {
     func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge
     ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         let space = challenge.protectionSpace
         guard space.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              Self.loopbackHosts.contains(space.host),
+              Hosts.isLoopback(space.host),
               let trust = space.serverTrust
         else { return (.performDefaultHandling, nil) }
         return (.useCredential, URLCredential(trust: trust))

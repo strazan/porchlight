@@ -95,7 +95,7 @@ struct MenuContent: View {
     private var waitingSummary: String? {
         switch model.currentPrompt {
         case .pairing(let request): return "\(request.clientName) wants to connect"
-        case .approval(let request): return "\(request.clientName) wants to use \(request.title ?? request.tool)"
+        case .approval(let request): return "\(request.client.name) wants to use \(request.title ?? request.tool)"
         case nil: break
         }
         return nil

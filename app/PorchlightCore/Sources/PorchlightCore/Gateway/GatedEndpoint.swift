@@ -14,7 +14,7 @@ struct GatedEndpoint: MCPEndpoint {
     /// The servers this app may use, or nil for all.
     let allowed: Set<String>?
     /// When the app made the request, if it was saved while the Mac was offline.
-    var queuedAt: Date? = nil
+    let queuedAt: Date?
     let router: Router
 
     func call(_ request: JSONValue, onProgress: ProgressSink?) async -> JSONValue {
@@ -26,13 +26,13 @@ struct GatedEndpoint: MCPEndpoint {
         if method == "tools/call" {
             // Every call is checked before it runs: one this can't place never reaches a server.
             guard let name = request["params"]?["name"]?.stringValue else {
-                return .rpcError(id: request.rpcID, code: -32602, message: "Missing tool name")
+                return .rpcError(id: request.rpcID, code: .invalidParams, message: "Missing tool name")
             }
             tool = name
             guard let target = await target(of: name) else {
                 let reason = "Unknown tool: \(name)"
                 await record(method, server, tool, started, .error(reason))
-                return .rpcError(id: request.rpcID, code: -32602, message: reason)
+                return .rpcError(id: request.rpcID, code: .invalidParams, message: reason)
             }
             server = target.server
             tool = target.tool
@@ -42,18 +42,14 @@ struct GatedEndpoint: MCPEndpoint {
             )
             if case .denied(let reason) = decision {
                 await record(method, server, tool, started, .denied(reason))
-                return Self.declined(request.rpcID, reason)
+                // A tool result rather than a protocol error, so the model sees why it didn't run.
+                return .toolResult(id: request.rpcID, reason, isError: true)
             }
         }
 
         var response = await inner.call(request, onProgress: onProgress)
-        if method == "tools/list" { response = await router.withoutDeniedTools(response, scope: scope) }
-
-        let outcome: ActivityEvent.Outcome =
-            if let message = response["error"]?["message"]?.stringValue { .error(message) }
-            else if response["result"]?["isError"] == .bool(true) { .error(Self.text(of: response) ?? "Tool reported an error") }
-            else { .ok }
-        await record(method, server, tool, started, outcome)
+        if method == "tools/list" { response = await router.withoutBlockedTools(response, scope: scope) }
+        await record(method, server, tool, started, response.failure.map(ActivityEvent.Outcome.error) ?? .ok)
         return response
     }
 
@@ -61,10 +57,10 @@ struct GatedEndpoint: MCPEndpoint {
         await inner.notify(notification)
     }
 
-    private func target(of name: String) async -> (server: String, tool: String)? {
+    private func target(of name: String) async -> ToolTarget? {
         switch scope {
-        case .server(let server): (server, name)
-        case .all: await router.resolveTool(name, allowed: allowed)
+        case .server(let server): ToolTarget(server: server, tool: name)
+        case .all: await router.aggregator.resolveTool(name, allowed: allowed)
         }
     }
 
@@ -73,22 +69,5 @@ struct GatedEndpoint: MCPEndpoint {
             date: Date(), client: client, server: server, method: method, tool: tool,
             duration: ContinuousClock.now - started, outcome: outcome, queuedAt: queuedAt
         ))
-    }
-
-    /// A tool result (not a protocol error), so the model sees why the call didn't happen.
-    static func declined(_ id: JSONValue?, _ reason: String) -> JSONValue {
-        .object([
-            "jsonrpc": .string("2.0"),
-            "id": id ?? .null,
-            "result": .object([
-                "content": .array([.object(["type": .string("text"), "text": .string(reason)])]),
-                "isError": .bool(true),
-            ]),
-        ])
-    }
-
-    static func text(of response: JSONValue) -> String? {
-        guard case .array(let content)? = response["result"]?["content"] else { return nil }
-        return content.first?["text"]?.stringValue
     }
 }

@@ -5,7 +5,8 @@ Listens on a free port (printed as the first line of stdout) at /mcp.
 - Requires `Authorization: Bearer test-key`.
 - `initialize` assigns an `Mcp-Session-Id`; later requests must send it (404 otherwise).
 - `tools/call` answers as SSE when the client accepts it, with a progress event first
-  if the request has a progress token. Tool `restart` forgets all sessions.
+  if the request has a progress token. Tool `restart` forgets all sessions; tool `split`
+  answers with its JSON spread over several `data:` lines.
 - Counts initialize calls in the `stats` tool.
 """
 import json
@@ -84,7 +85,11 @@ class Handler(BaseHTTPRequestHandler):
                 progress = {"jsonrpc": "2.0", "method": "notifications/progress",
                             "params": {"progressToken": token, "progress": 1, "total": 1}}
                 events += f"event: message\ndata: {json.dumps(progress)}\n\n"
-            events += f"event: message\ndata: {json.dumps(result)}\n\n"
+            if name == "split":
+                lines = json.dumps(result, indent=1).split("\n")
+                events += "event: message\n" + "".join(f"data: {line}\n" for line in lines) + "\n"
+            else:
+                events += f"event: message\ndata: {json.dumps(result)}\n\n"
             return self.reply(200, events.encode(), content_type="text/event-stream")
         return self.reply(200, {"jsonrpc": "2.0", "id": id, "error": {"code": -32601, "message": "unknown"}})
 

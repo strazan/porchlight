@@ -2,20 +2,11 @@ import Foundation
 import Testing
 @testable import PorchlightCore
 
-/// A fake server that also lists an additive tool (`add`) and a destructive one (`remove`).
-func queueConfig(_ name: String, policy: ToolPolicy = ToolPolicy(defaultPermission: .allowAll)) -> ServerConfig {
-    var config = fakeConfig(name, policy: policy)
-    config.env["FAKE_MORE_TOOLS"] = "1"
-    return config
-}
-
+/// Requests saved by the relay while the Mac was offline.
 @Suite struct QueueTests {
     /// The shared vector in protocol/vectors, sealed by WebCrypto the way the relay does it.
     @Test func opensWhatTheRelaySeals() throws {
-        let file = URL(filePath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "protocol/vectors/queue.json")
+        let file = repositoryRoot.appending(path: "protocol/vectors/queue.json")
         let vector = try JSONValue.parse(Data(contentsOf: file))
         let d = try #require(vector["private_key"]?["d"]?.stringValue)
         var base64 = d.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
@@ -50,53 +41,38 @@ func queueConfig(_ name: String, policy: ToolPolicy = ToolPolicy(defaultPermissi
         #expect(!policy.queuesOffline("remove", readOnly: false, destructive: true))
     }
 
-    @Test func readsPoliciesSavedBeforeQueueing() throws {
-        let saved = #"{"defaultPermission":"askForChanges","overrides":{"x":"allow"}}"#
-        let policy = try JSONDecoder().decode(ToolPolicy.self, from: Data(saved.utf8))
-        #expect(policy.overrides == ["x": .allow])
-        #expect(policy.offline.isEmpty)
-    }
-
-    @Test func catalogShowsWhatTheAppSeesAndWhatQueues() async throws {
+    @Test func catalogShowsWhatTheAppSeesAndWhatQueues() async {
         var blocking = ToolPolicy(defaultPermission: .allowAll)
         blocking.overrides["add"] = .deny
-        let router = await makeRouter([queueConfig("alpha"), queueConfig("beta", policy: blocking)])
-        defer { Task { await router.stopAll() } }
-        await router.setClientAccess(["chatgpt": ["alpha"]])
+        await withRouter([queueConfig("alpha"), queueConfig("beta", policy: blocking)], access: ["chatgpt": ["alpha"]]) { h in
+            let scoped = await h.router.offlineCatalog(for: "chatgpt")
+            guard case .object(let paths)? = scoped["paths"] else {
+                Issue.record("no paths")
+                return
+            }
+            #expect(Set(paths.keys) == ["/mcp", "/mcp/alpha"])
+            #expect(names(.object(["result": paths["/mcp"] ?? .null]), "tools") == ["alpha__echo", "alpha__add", "alpha__remove"])
+            #expect(paths["/mcp"]?["queueable"] == .array([.string("alpha__add")]))
+            #expect(paths["/mcp/alpha"]?["queueable"] == .array([.string("add")]))
+            #expect(paths["/mcp/alpha"]?["initialize"]?["serverInfo"]?["name"] == .string("alpha"))
+            #expect(scoped["protocol_versions"]?.stringArray?.contains("2025-06-18") == true)
 
-        let scoped = await router.offlineCatalog(for: "chatgpt")
-        guard case .object(let paths)? = scoped["paths"] else { Issue.record("no paths"); return }
-        #expect(Set(paths.keys) == ["/mcp", "/mcp/alpha"])
-        #expect(names(.object(["result": paths["/mcp"]!]), "tools") == ["alpha__echo", "alpha__add", "alpha__remove"])
-        #expect(paths["/mcp"]?["queueable"] == .array([.string("alpha__add")]))
-        #expect(paths["/mcp/alpha"]?["queueable"] == .array([.string("add")]))
-        #expect(paths["/mcp/alpha"]?["initialize"]?["serverInfo"]?["name"] == .string("alpha"))
-        #expect(scoped["protocol_versions"]?.stringArray?.contains("2025-06-18") == true)
-
-        // An app without limits sees beta too, minus its blocked tool, which never queues.
-        let everything = await router.offlineCatalog(for: "claude")
-        let beta = try #require(everything["paths"]?["/mcp/beta"])
-        #expect(names(.object(["result": beta]), "tools") == ["echo", "remove"])
-        #expect(beta["queueable"] == .array([]))
+            // An app without limits sees beta too, minus its blocked tool, which never queues.
+            let everything = await h.router.offlineCatalog(for: "claude")
+            let beta = everything["paths"]?["/mcp/beta"]
+            #expect(names(.object(["result": beta ?? .null]), "tools") == ["echo", "remove"])
+            #expect(beta?["queueable"] == .array([]))
+        }
     }
 
     @Test func queuedCallsAskWithTheTimeTheyWereMade() async {
-        let harness = await PolicyHarness([queueConfig("alpha", policy: ToolPolicy(defaultPermission: .askForChanges))], answer: .allowOnce)
-        defer { Task { await harness.router.stopAll() } }
         let made = Date(timeIntervalSince1970: 1_800_000_000)
-        let recorded = RecordedResponse()
-        await harness.router.handle(HTTPRequest(
-            id: "queued-1", method: "POST", path: "/mcp",
-            headers: [
-                ("accept", "application/json"), ("porchlight-client-name", "Claude"),
-                (Router.queuedAtHeader, made.formatted(.iso8601)),
-            ],
-            body: Data(callTool(id: 1, "alpha__add").utf8)
-        ), recorded.responder)
-
-        #expect(toolText(await recorded.json)?["server"] == .string("alpha"))
-        #expect(harness.asked.value.map(\.queuedAt) == [made])
-        #expect(harness.activity.value.last?.queuedAt == made)
+        await withRouter([queueConfig("alpha", policy: ToolPolicy(defaultPermission: .askForChanges))], answer: .allowOnce) { h in
+            let response = await h.post(callTool(id: 1, "alpha__add"), from: .claude, queuedAt: made)
+            #expect(toolText(await response.json)?["server"] == .string("alpha"))
+            #expect(h.asked.value.map(\.queuedAt) == [made])
+            #expect(h.activity.value.last?.queuedAt == made)
+        }
     }
 
     @Test func ledgerRemembersFinishedRequests() throws {
@@ -109,6 +85,12 @@ func queueConfig(_ name: String, policy: ToolPolicy = ToolPolicy(defaultPermissi
         #expect(QueueLedger(file: file).contains("a"))
         for i in 0..<QueueLedger.limit { ledger.add("n\(i)") }
         #expect(!QueueLedger(file: file).contains("a"))
+
+        // A list that can't be read starts over, and says so.
+        try Data("garbage".utf8).write(to: file)
+        let logged = Locked<[String]>([])
+        #expect(!QueueLedger(file: file, log: { line in logged.withLock { $0.append(line) } }).contains("n1"))
+        #expect(logged.value.count == 1)
     }
 
     @Test func framesCarryQueuedRequests() throws {

@@ -201,9 +201,9 @@ private struct ApprovalView: View {
 
     var body: some View {
         PromptLayout(
-            clientID: request.clientID,
-            appName: request.clientName,
-            title: "\(request.clientName) wants to use \(request.title ?? request.tool)",
+            clientID: request.client.id,
+            appName: request.client.name,
+            title: "\(request.client.name) wants to use \(request.title ?? request.tool)",
             subtitle: subtitle
         ) {
             ArgumentsView(arguments: request.arguments)

@@ -53,7 +53,7 @@ chunks are base64 (`*_b64`) so that frames stay valid JSON.
 | `list_clients` | — | Ask for a `clients` frame. |
 | `revoke_client` | `grant_id` | Revoke an app's access immediately: the relay refuses the grant's requests from then on (even with a token KV hasn't deleted yet), ends ones in flight, and drops what it queued. |
 | `offline_catalog` | `client_id`, `catalog` (or `null` to forget) | What this app sees while the host is offline. |
-| `queued_done` | `id` | A `queued` request has been handled (run, declined or unreadable); the relay deletes it. |
+| `queued_done` | `id` | A `queued` request has been handled (run, denied or unreadable); the relay deletes it. |
 | `ping` | — | Keepalive, every ~30 s. Must be exactly `{"type":"ping"}` (see below). |
 
 A host that cannot produce a response sends `res_start` with a 5xx status followed by

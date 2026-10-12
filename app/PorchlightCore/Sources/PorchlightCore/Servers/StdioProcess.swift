@@ -1,16 +1,12 @@
 import Foundation
 
-public typealias LogSink = @Sendable (String) -> Void
-
-public let stderrLog: LogSink = { line in
-    FileHandle.standardError.write(Data((line + "\n").utf8))
-}
-
 /// A child MCP server speaking newline-delimited JSON-RPC over stdin/stdout.
-public final class StdioProcess: @unchecked Sendable {
-    public let command: [String]
+///
+/// `@unchecked Sendable`: `Process` and `Pipe` aren't marked Sendable, but after `init` they're
+/// only touched through thread-safe calls, and writes are serialized by `writeLock`.
+final class StdioProcess: @unchecked Sendable {
     /// Messages the child writes to stdout. Finishes when stdout closes.
-    public let messages: AsyncStream<JSONValue>
+    let messages: AsyncStream<JSONValue>
 
     private let process = Process()
     private let stdin = Pipe()
@@ -20,9 +16,8 @@ public final class StdioProcess: @unchecked Sendable {
     private let writeLock = NSLock()
     private let log: LogSink
 
-    public init(command: [String], environment: [String: String]? = nil, log: @escaping LogSink = stderrLog) {
+    init(command: [String], environment: [String: String]? = nil, log: @escaping LogSink = stderrLog) {
         precondition(!command.isEmpty, "command must not be empty")
-        self.command = command
         self.log = log
         (messages, continuation) = AsyncStream.makeStream(of: JSONValue.self)
         // `env` does the PATH lookup, so `npx`, `uvx` etc. resolve like in a shell.
@@ -34,11 +29,11 @@ public final class StdioProcess: @unchecked Sendable {
         process.standardError = stderr
     }
 
-    public var isRunning: Bool { process.isRunning }
+    var isRunning: Bool { process.isRunning }
 
     /// Waits for the process to exit and returns its status. Its stdout can close a moment
     /// before it's reaped, so don't read the status right at end of output.
-    public func exitStatus() async -> Int32 {
+    func exitStatus() async -> Int32 {
         await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
                 self.process.waitUntilExit()
@@ -47,9 +42,11 @@ public final class StdioProcess: @unchecked Sendable {
         }
     }
 
-    public func start() throws {
-        // A child that exits while we write must not kill us with SIGPIPE.
-        signal(SIGPIPE, SIG_IGN)
+    /// A child that exits while we write to it must not kill us with SIGPIPE.
+    private static let ignoreBrokenPipes: Void = { signal(SIGPIPE, SIG_IGN) }()
+
+    func start() throws {
+        Self.ignoreBrokenPipes
 
         let continuation = self.continuation
         let log = self.log
@@ -84,7 +81,7 @@ public final class StdioProcess: @unchecked Sendable {
         try process.run()
     }
 
-    public func send(_ message: JSONValue) throws {
+    func send(_ message: JSONValue) throws {
         var line = message.serialized()
         line.append(0x0A)
         writeLock.lock()
@@ -92,7 +89,7 @@ public final class StdioProcess: @unchecked Sendable {
         try stdin.fileHandleForWriting.write(contentsOf: line)
     }
 
-    public func terminate() {
+    func terminate() {
         if process.isRunning { process.terminate() }
     }
 }

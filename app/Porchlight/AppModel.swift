@@ -129,7 +129,7 @@ final class AppModel {
     @ObservationIgnored let isPreview: Bool
     /// Icons for apps and servers.
     @ObservationIgnored let icons: IconStore
-    @ObservationIgnored var previewProbe: Result<Router.ProbeResult, Router.ProbeError>?
+    @ObservationIgnored var previewProbe: Result<ServerProbe.Report, ServerProbe.Failure>?
     @ObservationIgnored var previewImportCandidates: [ImportCandidate] = []
     @ObservationIgnored private var runner: Task<Void, Never>?
     @ObservationIgnored private var catalogPush: Task<Void, Never>?
@@ -164,30 +164,30 @@ final class AppModel {
         keepAwake = defaults.bool(forKey: "keepAwake")
         clientAccess = (defaults.dictionary(forKey: "clientAccess") as? [String: [String]] ?? [:]).mapValues(Set.init)
         deployment = defaults.data(forKey: "deployment").flatMap { try? JSONDecoder().decode(Deployment.self, from: $0) }
-        servers = store.load() ?? migrateSingleServer()
-        // Older editors could save a whole "Name: value" header line as the name.
-        let repaired = servers.map { $0.repairingHeaders() }
-        if repaired != servers {
-            servers = repaired
-            try? store.save(servers)
+        var unreadable: Error?
+        do {
+            servers = try store.load() ?? []
+        } catch {
+            servers = []
+            unreadable = error
         }
+        if let unreadable { setAsideUnreadableServerList(unreadable) }
         guard !preview else { return }
         connectivity = ConnectivityWatcher { [weak self] in self?.connectivityChanged() }
         if isConfigured { Task { await start() } }
     }
 
-    /// Before the server list existed, one server lived in two defaults keys.
-    private func migrateSingleServer() -> [ServerConfig] {
-        guard let name = defaults.string(forKey: "serverName"),
-              let command = defaults.string(forKey: "serverCommand")
-        else { return [] }
-        var config = ServerConfig(name: ServerConfig.slug(name), command: "")
-        config.commandLineString = command
-        let migrated = config.command.isEmpty ? [] : [config]
-        try? store.save(migrated)
-        defaults.removeObject(forKey: "serverName")
-        defaults.removeObject(forKey: "serverCommand")
-        return migrated
+    /// Keeps a server list that can't be read (say, edited by hand into invalid JSON) next to
+    /// where it was, rather than saving over it, and starts with an empty one.
+    private func setAsideUnreadableServerList(_ error: Error) {
+        let aside = store.url.appendingPathExtension("unreadable")
+        try? FileManager.default.removeItem(at: aside)
+        do {
+            try FileManager.default.moveItem(at: store.url, to: aside)
+            log("Couldn't read the server list (\(error.localizedDescription)); it's kept as \(aside.lastPathComponent)")
+        } catch {
+            log("Couldn't read the server list or set it aside: \(error.localizedDescription)")
+        }
     }
 
     // MARK: Derived state
@@ -296,10 +296,10 @@ final class AppModel {
     }
 
     /// Tries a config the way a client would, for the editor's Test Connection.
-    func probe(_ config: ServerConfig) async -> Result<Router.ProbeResult, Router.ProbeError> {
+    func probe(_ config: ServerConfig) async -> Result<ServerProbe.Report, ServerProbe.Failure> {
         if let previewProbe { return previewProbe }
         if shellEnvironment == nil, config.transport == .stdio { shellEnvironment = await ShellEnvironment.resolve() }
-        return await Router.probe(config, environment: shellEnvironment ?? ProcessInfo.processInfo.environment)
+        return await ServerProbe.run(config, environment: shellEnvironment ?? ProcessInfo.processInfo.environment)
     }
 
     /// Servers configured in Claude Desktop (and its extensions), Claude Code and Cursor.
@@ -484,7 +484,7 @@ final class AppModel {
         await withCheckedContinuation { continuation in
             approvalWaiters[request.id] = continuation
             pendingApprovals.append(request)
-            log("\(request.clientName) wants to run \(request.tool) on \(request.server)")
+            log("\(request.client.name) wants to run \(request.tool) on \(request.server)")
             promptPanel.update()
             Task {
                 try? await Task.sleep(for: request.queuedAt == nil ? Self.approvalTimeout : Self.queuedApprovalTimeout)
@@ -758,11 +758,18 @@ final class AppModel {
             logs.append(LogLine(id: index, date: now.addingTimeInterval(Double(index - 20)), server: line.0, text: line.1))
         }
 
-        previewProbe = .success(Router.ProbeResult(serverName: "obsidian-local-rest-api", tools: [
-            .init(name: "search", title: "Search notes", description: "Full-text search across the vault.", readOnly: true, destructive: false),
-            .init(name: "get_note", title: "Read a note", description: nil, readOnly: true, destructive: false),
-            .init(name: "append_to_note", title: "Append to a note", description: "Adds text to the end of a note.", readOnly: false, destructive: false, additive: true),
-            .init(name: "delete_note", title: "Delete a note", description: "Moves a note to the trash.", readOnly: false, destructive: true),
+        let reads = { (title: String) in ToolHints(readOnly: true, destructive: false, declaresDestructive: false, title: title) }
+        previewProbe = .success(ServerProbe.Report(serverName: "obsidian-local-rest-api", tools: [
+            .init(name: "search", description: "Full-text search across the vault.", hints: reads("Search notes")),
+            .init(name: "get_note", description: nil, hints: reads("Read a note")),
+            .init(
+                name: "append_to_note", description: "Adds text to the end of a note.",
+                hints: ToolHints(readOnly: false, destructive: false, declaresDestructive: false, title: "Append to a note")
+            ),
+            .init(
+                name: "delete_note", description: "Moves a note to the trash.",
+                hints: ToolHints(readOnly: false, destructive: true, declaresDestructive: true, title: "Delete a note")
+            ),
         ]))
         previewImportCandidates = [
             ImportCandidate(source: .claudeDesktop, scope: nil, originalName: "filesystem", config: servers[1], unsupportedReason: nil),
@@ -776,8 +783,8 @@ final class AppModel {
         switch scenario {
         case .waitingForToolApproval:
             pendingApprovals = [ToolApprovalRequest(
-                clientID: "https://claude.ai/oauth/mcp-oauth-client-metadata",
-                clientName: "Claude", server: "apple-reminders", tool: "create_reminder", title: "Create reminder",
+                client: ClientIdentity(id: "https://claude.ai/oauth/mcp-oauth-client-metadata", name: "Claude"),
+                server: "apple-reminders", tool: "create_reminder", title: "Create reminder",
                 arguments: .object(["list": .string("Groceries"), "title": .string("Oat milk"), "dueDate": .string("2026-10-12T09:00:00")])
             )]
         case .switchedOff:

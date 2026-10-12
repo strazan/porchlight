@@ -58,6 +58,15 @@ public enum JSONValue: Codable, Sendable, Hashable {
         return nil
     }
 
+    /// A number as a double, whether JSON wrote it with a fraction or not.
+    var numberValue: Double? {
+        switch self {
+        case .int(let i): Double(i)
+        case .double(let d): d
+        default: nil
+        }
+    }
+
     public static func parse(_ data: Data) throws -> JSONValue {
         try JSONDecoder().decode(JSONValue.self, from: data)
     }
@@ -70,20 +79,59 @@ public enum JSONValue: Codable, Sendable, Hashable {
     }
 }
 
-// MARK: - JSON-RPC helpers
+// MARK: - JSON-RPC
 
 extension JSONValue {
     public var rpcMethod: String? { self["method"]?.stringValue }
     public var rpcID: JSONValue? { self["id"] }
-    public var isRequest: Bool { rpcMethod != nil && rpcID != nil }
-    public var isNotification: Bool { rpcMethod != nil && rpcID == nil }
-    public var isResponse: Bool { rpcMethod == nil && rpcID != nil }
+    var isRequest: Bool { rpcMethod != nil && rpcID != nil }
+    var isNotification: Bool { rpcMethod != nil && rpcID == nil }
+    var isResponse: Bool { rpcMethod == nil && rpcID != nil }
 
-    public static func rpcError(id: JSONValue?, code: Int64, message: String) -> JSONValue {
+    /// A request. Without an `id`, for an upstream to send under its own.
+    static func rpcRequest(_ method: String, id: JSONValue? = nil, params: [String: JSONValue]? = nil) -> JSONValue {
+        var message: [String: JSONValue] = ["jsonrpc": .string("2.0"), "method": .string(method)]
+        if let id { message["id"] = id }
+        if let params { message["params"] = .object(params) }
+        return .object(message)
+    }
+
+    static func rpcResult(id: JSONValue? = nil, _ result: JSONValue) -> JSONValue {
+        .object(["jsonrpc": .string("2.0"), "id": id ?? .null, "result": result])
+    }
+
+    static func rpcError(id: JSONValue?, code: RPCErrorCode, message: String) -> JSONValue {
         .object([
             "jsonrpc": .string("2.0"),
             "id": id ?? .null,
-            "error": .object(["code": .int(code), "message": .string(message)]),
+            "error": .object(["code": .int(code.rawValue), "message": .string(message)]),
         ])
     }
+
+    /// A `tools/call` result with one text block. With `isError`, the model reads why the call failed.
+    static func toolResult(id: JSONValue?, _ text: String, isError: Bool) -> JSONValue {
+        rpcResult(id: id, .object([
+            "content": .array([.object(["type": .string("text"), "text": .string(text)])]),
+            "isError": .bool(isError),
+        ]))
+    }
+
+    /// Why a response is a failure: its JSON-RPC error, or the text of a tool result marked
+    /// `isError`. Nil when it succeeded.
+    var failure: String? {
+        if let error = self["error"] { return error["message"]?.stringValue ?? "Error" }
+        guard self["result"]?["isError"] == .bool(true) else { return nil }
+        if case .array(let content)? = self["result"]?["content"], let text = content.first?["text"]?.stringValue { return text }
+        return "The tool reported an error"
+    }
+}
+
+/// JSON-RPC's error codes, and the MCP ones Porchlight uses.
+enum RPCErrorCode: Int64 {
+    case parseError = -32700
+    case methodNotFound = -32601
+    case invalidParams = -32602
+    case internalError = -32603
+    case requestCancelled = -32800
+    case resourceNotFound = -32002
 }

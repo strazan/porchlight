@@ -27,11 +27,7 @@ public enum SiteIcon {
 
     /// HTTPS on a public host name: a page can't point icon fetches at this Mac or its network.
     public static func isPublic(_ url: URL) -> Bool {
-        guard url.scheme?.lowercased() == "https", let host = url.host()?.lowercased(), host.contains(".") else { return false }
-        let local = host.hasSuffix(".local") || host.hasSuffix(".localhost") || host.hasSuffix(".internal")
-            || host.hasSuffix(".lan") || host.hasSuffix(".home.arpa")
-        let ipLiteral = host.contains(":") || host.allSatisfy { $0.isNumber || $0 == "." }
-        return !local && !ipLiteral
+        url.scheme?.lowercased() == "https" && url.host().map(Hosts.isPublicName) == true
     }
 
     /// The conventional locations, for sites whose page can't be read.

@@ -9,10 +9,11 @@ import Foundation
 ///
 /// Each call can be limited to the servers one app may use (`allowed`); the others don't
 /// appear in its lists and can't be reached by name.
-public actor Aggregator: MCPEndpoint {
+actor Aggregator {
     static let separator = "__"
     static let maxNameLength = 64
-    static let supportedVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
+    /// How long a server's line in the `initialize` instructions may be.
+    static let summaryLength = 200
 
     private var upstreams: [any Upstream] = []
     private var toolRoutes: [String: Route] = [:]
@@ -24,9 +25,7 @@ public actor Aggregator: MCPEndpoint {
         let name: String
     }
 
-    public init() {}
-
-    public func setUpstreams(_ upstreams: [any Upstream]) {
+    func setUpstreams(_ upstreams: [any Upstream]) {
         self.upstreams = upstreams
         let names = Set(upstreams.map(\.name))
         toolRoutes = toolRoutes.filter { names.contains($0.value.server) }
@@ -34,45 +33,36 @@ public actor Aggregator: MCPEndpoint {
         resourceRoutes = resourceRoutes.filter { names.contains($0.value) }
     }
 
-    public func call(_ request: JSONValue, onProgress: ProgressSink?) async -> JSONValue {
-        await call(request, onProgress: onProgress, allowed: nil)
-    }
-
     /// `allowed`: the servers this caller may use, or nil for all of them.
-    public func call(_ request: JSONValue, onProgress: ProgressSink?, allowed: Set<String>?) async -> JSONValue {
+    func call(_ request: JSONValue, onProgress: ProgressSink?, allowed: Set<String>?) async -> JSONValue {
         let params = request["params"] ?? .object([:])
         var response: JSONValue
         switch request.rpcMethod {
-        case "initialize": response = Self.result(await initializeResult(params, allowed: allowed))
-        case "ping": response = Self.result(.object([:]))
-        case "tools/list": response = Self.result(.object(["tools": .array(await listTools(allowed: allowed))]))
+        case "initialize": response = .rpcResult(await initializeResult(params, allowed: allowed))
+        case "ping": response = .rpcResult(.object([:]))
+        case "tools/list": response = .rpcResult(.object(["tools": .array(await listTools(allowed: allowed))]))
         case "tools/call": response = await callRenamed(request, .tool, allowed: allowed, onProgress: onProgress)
-        case "prompts/list": response = Self.result(.object(["prompts": .array(await listPrompts(allowed: allowed))]))
+        case "prompts/list": response = .rpcResult(.object(["prompts": .array(await listPrompts(allowed: allowed))]))
         case "prompts/get": response = await callRenamed(request, .prompt, allowed: allowed, onProgress: nil)
-        case "resources/list": response = Self.result(.object(["resources": .array(await listResources(allowed: allowed))]))
+        case "resources/list": response = .rpcResult(.object(["resources": .array(await listResources(allowed: allowed))]))
         case "resources/templates/list":
-            response = Self.result(.object(["resourceTemplates": .array(await listTemplates(allowed: allowed))]))
+            response = .rpcResult(.object(["resourceTemplates": .array(await listTemplates(allowed: allowed))]))
         case "resources/read": response = await readResource(request, allowed: allowed)
         case "logging/setLevel":
             for upstream in await upstreams(with: "logging", allowed: allowed) { _ = await upstream.request(request) }
-            response = Self.result(.object([:]))
+            response = .rpcResult(.object([:]))
         default:
-            response = .rpcError(id: nil, code: -32601, message: "Method not found: \(request.rpcMethod ?? "?")")
+            response = .rpcError(id: nil, code: .methodNotFound, message: "Method not found: \(request.rpcMethod ?? "?")")
         }
         response["id"] = request.rpcID ?? .null
         return response
-    }
-
-    public func notify(_ notification: JSONValue) async {
-        // Nothing to forward: cancellation arrives via the relay, and the handshake with
-        // each child is Porchlight's own.
     }
 
     // MARK: initialize
 
     private func initializeResult(_ params: JSONValue, allowed: Set<String>?) async -> JSONValue {
         let requested = params["protocolVersion"]?.stringValue ?? ""
-        let version = Self.supportedVersions.contains(requested) ? requested : "2025-06-18"
+        let version = MCP.supportedVersions.contains(requested) ? requested : MCP.preferredVersion
         var servers: [String] = []
         for upstream in visible(allowed) {
             let about = Self.summary(of: await upstream.handshake)
@@ -88,7 +78,7 @@ public actor Aggregator: MCPEndpoint {
             ]),
             "serverInfo": .object(["name": .string("porchlight"), "title": .string("Porchlight"), "version": .string(Porchlight.version)]),
             "instructions": .string(
-                "Porchlight combines MCP servers running on the user's computer. Tool and prompt names are "
+                "Porchlight combines MCP servers running on the user's Mac. Tool and prompt names are "
                     + "prefixed with their server: <server>__<name>. Pick tools from the server that fits the request.\n\n"
                     + "Servers:\n" + servers.joined(separator: "\n")
             ),
@@ -103,7 +93,7 @@ public actor Aggregator: MCPEndpoint {
         guard let text = candidates.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { return nil }
         let paragraph = text.components(separatedBy: "\n\n").first ?? text
         let line = paragraph.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        return line.count > 200 ? String(line.prefix(199)) + "…" : line
+        return line.count > summaryLength ? String(line.prefix(summaryLength - 1)) + "…" : line
     }
 
     // MARK: Lists
@@ -161,9 +151,7 @@ public actor Aggregator: MCPEndpoint {
                     repeat {
                         var params: [String: JSONValue] = [:]
                         if let cursor { params["cursor"] = cursor }
-                        let response = await upstream.request(.object([
-                            "jsonrpc": .string("2.0"), "method": .string(method), "params": .object(params),
-                        ]))
+                        let response = await upstream.request(.rpcRequest(method, params: params))
                         guard case .array(let page)? = response["result"]?[key] else { break }
                         items += page.map { (upstream.name, $0) }
                         cursor = response["result"]?["nextCursor"]
@@ -203,7 +191,7 @@ public actor Aggregator: MCPEndpoint {
     /// `tools/call` and `prompts/get`: map the alias back to its server and original name.
     private func callRenamed(_ request: JSONValue, _ kind: RenamedKind, allowed: Set<String>?, onProgress: ProgressSink?) async -> JSONValue {
         guard let alias = request["params"]?["name"]?.stringValue else {
-            return .rpcError(id: nil, code: -32602, message: "Missing name")
+            return .rpcError(id: nil, code: .invalidParams, message: "Missing name")
         }
         // A client may call without listing first in this process (e.g. after a restart).
         if route(alias, kind) == nil {
@@ -215,7 +203,7 @@ public actor Aggregator: MCPEndpoint {
         guard let route = route(alias, kind),
               let upstream = visible(allowed).first(where: { $0.name == route.server })
         else {
-            return .rpcError(id: nil, code: -32602, message: "Unknown name: \(alias)")
+            return .rpcError(id: nil, code: .invalidParams, message: "Unknown name: \(alias)")
         }
         var forwarded = request
         forwarded["params"]?["name"] = .string(route.name)
@@ -223,15 +211,15 @@ public actor Aggregator: MCPEndpoint {
     }
 
     /// The server and original name behind a combined tool name, among `allowed` servers.
-    public func resolveTool(_ alias: String, allowed: Set<String>? = nil) async -> (server: String, tool: String)? {
+    func resolveTool(_ alias: String, allowed: Set<String>?) async -> ToolTarget? {
         if toolRoutes[alias] == nil { _ = await listTools(allowed: allowed) }
         guard let route = toolRoutes[alias], allowed?.contains(route.server) ?? true else { return nil }
-        return (route.server, route.name)
+        return ToolTarget(server: route.server, tool: route.name)
     }
 
     /// Like `resolveTool`, without listing: for names that were just listed.
-    func knownTool(_ alias: String) -> (server: String, tool: String)? {
-        toolRoutes[alias].map { ($0.server, $0.name) }
+    func knownTool(_ alias: String) -> ToolTarget? {
+        toolRoutes[alias].map { ToolTarget(server: $0.server, tool: $0.name) }
     }
 
     private func route(_ alias: String, _ kind: RenamedKind) -> Route? {
@@ -243,12 +231,12 @@ public actor Aggregator: MCPEndpoint {
 
     private func readResource(_ request: JSONValue, allowed: Set<String>?) async -> JSONValue {
         guard let uri = request["params"]?["uri"]?.stringValue else {
-            return .rpcError(id: nil, code: -32602, message: "Missing uri")
+            return .rpcError(id: nil, code: .invalidParams, message: "Missing uri")
         }
         if resourceRoutes[uri] == nil { _ = await listResources(allowed: allowed) }
         if let server = resourceRoutes[uri] {
             guard let upstream = visible(allowed).first(where: { $0.name == server }) else {
-                return .rpcError(id: nil, code: -32002, message: "Resource not found: \(uri)")
+                return .rpcError(id: nil, code: .resourceNotFound, message: "Resource not found: \(uri)")
             }
             return await upstream.request(request)
         }
@@ -257,7 +245,7 @@ public actor Aggregator: MCPEndpoint {
             let response = await upstream.request(request)
             if response["result"] != nil { return response }
         }
-        return .rpcError(id: nil, code: -32002, message: "Resource not found: \(uri)")
+        return .rpcError(id: nil, code: .resourceNotFound, message: "Resource not found: \(uri)")
     }
 
     // MARK: Helpers
@@ -266,10 +254,6 @@ public actor Aggregator: MCPEndpoint {
     /// servers mustn't forget the routes other callers listed.
     static func merge(_ table: [String: Route], _ fresh: [String: Route], replacing servers: Set<String>) -> [String: Route] {
         table.filter { !servers.contains($0.value.server) }.merging(fresh) { _, new in new }
-    }
-
-    static func result(_ value: JSONValue) -> JSONValue {
-        .object(["jsonrpc": .string("2.0"), "id": .null, "result": value])
     }
 
     /// `<server>__<name>`, made to fit `^[A-Za-z0-9_-]{1,64}$`. Over-long names keep a
@@ -284,6 +268,12 @@ public actor Aggregator: MCPEndpoint {
     }
 }
 
+/// A tool behind a name an app sees: its server, and the server's name for it.
+struct ToolTarget: Equatable, Sendable {
+    let server: String
+    let tool: String
+}
+
 /// The aggregate as one app sees it: only the servers it may use.
 struct ScopedAggregator: MCPEndpoint {
     let aggregator: Aggregator
@@ -294,6 +284,7 @@ struct ScopedAggregator: MCPEndpoint {
     }
 
     func notify(_ notification: JSONValue) async {
-        await aggregator.notify(notification)
+        // Nothing to forward: cancellation arrives through the relay, and the handshake with
+        // each server is Porchlight's own.
     }
 }

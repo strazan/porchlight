@@ -2,52 +2,37 @@ import Foundation
 import Testing
 @testable import PorchlightCore
 
+/// Defenses: what keeps a call, an app or a page from doing more than it should.
 @Suite struct SecurityTests {
-    private func queued(_ router: Router, _ tool: String) async -> JSONValue? {
-        let recorded = RecordedResponse()
-        await router.handle(HTTPRequest(
-            id: UUID().uuidString, method: "POST", path: "/mcp",
-            headers: [
-                ("accept", "application/json"), ("porchlight-client-name", "Claude"),
-                (Router.queuedAtHeader, Date().formatted(.iso8601)),
-            ],
-            body: Data(callTool(id: 1, tool).utf8)
-        ), recorded.responder)
-        return await recorded.json
-    }
-
     /// The relay queues by the catalog it was last sent, which can be out of date.
     @Test func queuedCallsRunOnlyIfTheToolStillQueues() async {
         var policy = ToolPolicy(defaultPermission: .allowAll)
         policy.offline["add"] = false
-        let harness = await PolicyHarness([queueConfig("alpha", policy: policy)], answer: .allowOnce)
-        defer { Task { await harness.router.stopAll() } }
-
-        for tool in ["alpha__add", "alpha__remove", "alpha__echo"] {
-            let response = await queued(harness.router, tool)
-            #expect(response?["result"]?["isError"] == .bool(true), "\(tool) ran")
+        await withRouter([queueConfig("alpha", policy: policy)], answer: .allowOnce) { h in
+            for tool in ["alpha__add", "alpha__remove", "alpha__echo"] {
+                let response = await h.post(callTool(id: 1, tool), from: .claude, queuedAt: Date())
+                #expect(await response.json?["result"]?["isError"] == .bool(true), "\(tool) ran")
+            }
+            #expect(h.activity.value.allSatisfy { if case .denied = $0.outcome { true } else { false } })
         }
-        #expect(harness.activity.value.allSatisfy { if case .denied = $0.outcome { true } else { false } })
     }
 
     @Test func callsThatCantBePlacedNeverRun() async {
-        let harness = await PolicyHarness([fakeConfig("alpha")])
-        defer { Task { await harness.router.stopAll() } }
-
-        let unknown = await postAs("Claude", harness.router, callTool(id: 1, "alpha__nope")).json
-        #expect(unknown?["error"]?["code"] == .int(-32602))
-        let nameless = await postAs("Claude", harness.router, #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":7}}"#).json
-        #expect(nameless?["error"]?["code"] == .int(-32602))
-        let passthrough = await postAs(
-            "Claude", harness.router, #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{}}"#, path: "/mcp/alpha"
-        ).json
-        #expect(passthrough?["error"]?["code"] == .int(-32602))
+        await withRouter([fakeConfig("alpha")]) { h in
+            let unknown = await h.post(callTool(id: 1, "alpha__nope"), from: .claude).json
+            #expect(unknown?["error"]?["code"] == .int(-32602))
+            let nameless = await h.post(#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":7}}"#, from: .claude).json
+            #expect(nameless?["error"]?["code"] == .int(-32602))
+            let passthrough = await h.post(#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{}}"#, path: "/mcp/alpha", from: .claude).json
+            #expect(passthrough?["error"]?["code"] == .int(-32602))
+        }
     }
 
     @Test func appNamesStayOnOnePlainLine() {
-        #expect(displayName("Claude\nPublished by claude.ai") == "Claude Published by claude.ai")
-        #expect(displayName("  Chat\u{202E}GPT\u{200B} ") == "ChatGPT")
-        #expect(displayName(String(repeating: "a", count: 200)).count == 80)
+        #expect("Claude\nPublished by claude.ai".displayName() == "Claude Published by claude.ai")
+        #expect("  Chat\u{202E}GPT\u{200B} ".displayName() == "ChatGPT")
+        #expect(String(repeating: "a", count: 200).displayName().count == 80)
+        #expect(ClientIdentity(id: "x", name: "Evil\nLine").name == "Evil Line")
         let frame = RelayFrame.decode(#"{"type":"pair_request","id":"p","code":"123456","client_name":"Evil Line","redirect_host":"x.test","loopback":false}"#)
         guard case .event(.pairingRequested(let request)) = frame else {
             Issue.record("expected pair_request, got \(frame)")
@@ -86,9 +71,17 @@ import Testing
 
     @Test func httpServersRedirectOnlyWithinTheirOrigin() {
         let origin = URL(string: "https://mcp.example.com/mcp")
-        #expect(LoopbackTrust.sameOrigin(origin, URL(string: "https://MCP.example.com:443/v2")))
-        #expect(!LoopbackTrust.sameOrigin(origin, URL(string: "https://evil.test/mcp")))
-        #expect(!LoopbackTrust.sameOrigin(origin, URL(string: "http://mcp.example.com/mcp")))
-        #expect(!LoopbackTrust.sameOrigin(origin, URL(string: "https://mcp.example.com:8443/mcp")))
+        #expect(HTTPUpstreamDelegate.sameOrigin(origin, URL(string: "https://MCP.example.com:443/v2")))
+        #expect(!HTTPUpstreamDelegate.sameOrigin(origin, URL(string: "https://evil.test/mcp")))
+        #expect(!HTTPUpstreamDelegate.sameOrigin(origin, URL(string: "http://mcp.example.com/mcp")))
+        #expect(!HTTPUpstreamDelegate.sameOrigin(origin, URL(string: "https://mcp.example.com:8443/mcp")))
+    }
+
+    @Test func classifiesHosts() {
+        #expect(Hosts.isLoopback("[::1]") && Hosts.isLoopback("LOCALHOST"))
+        #expect(Hosts.isLocal("192.168.1.20") && Hosts.isLocal("printer.local") && Hosts.isLocal("172.20.0.1"))
+        #expect(!Hosts.isLocal("172.40.0.1") && !Hosts.isLocal("example.com"))
+        #expect(Hosts.isPublicName("cdn.example.com"))
+        #expect(!Hosts.isPublicName("10.0.0.1") && !Hosts.isPublicName("router.lan") && !Hosts.isPublicName("intranet"))
     }
 }

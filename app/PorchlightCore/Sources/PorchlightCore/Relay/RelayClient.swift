@@ -9,8 +9,14 @@ public actor RelayClient {
     }
 
     static let maxChunk = 192 * 1024
+    static let maxMessageSize = 32 * 1024 * 1024
     static let pingInterval: Duration = .seconds(30)
-    static let pongTimeout: TimeInterval = 45
+    static let pongTimeout: Duration = .seconds(45)
+    // Reconnect waits, in seconds: doubling from the first to the longest, with jitter. A
+    // connection that stayed up longer than `healthyConnection` starts over at the first.
+    static let firstBackoff = 1.0
+    static let longestBackoff = 30.0
+    static let healthyConnection: Duration = .seconds(60)
 
     private let url: URL
     private let secret: String
@@ -27,10 +33,10 @@ public actor RelayClient {
     /// waiting on them, and an approval prompt may still be open.
     private var queuedRunning: Set<String> = []
     private var socket: URLSessionWebSocketTask?
-    private var backoff = 1.0
+    private var backoff = firstBackoff
     private var backoffWait: Task<Void, Never>?
     private var skipNextWait = false
-    private var lastPong = Date()
+    private var lastPong = ContinuousClock.now
     private let debug = ProcessInfo.processInfo.environment["PORCHLIGHT_DEBUG"] != nil
 
     private func trace(_ message: @autoclosure () -> String) {
@@ -59,27 +65,42 @@ public actor RelayClient {
 
     // MARK: Control messages
 
+    // Each returns false if it couldn't be sent (not connected, or the connection dropped).
+
     /// Answers a pairing request from an app's consent page.
-    public func decidePairing(_ id: String, allow: Bool) async {
-        try? await socket?.send(.string(HostFrame.pairDecision(id: id, allow: allow)))
+    @discardableResult
+    public func decidePairing(_ id: String, allow: Bool) async -> Bool {
+        await send(HostFrame.pairDecision(id: id, allow: allow))
     }
 
     /// Asks the relay for the current clients; they arrive as `.clientsChanged`.
-    public func refreshClients() async {
-        try? await socket?.send(.string(HostFrame.listClients))
+    @discardableResult
+    public func refreshClients() async -> Bool {
+        await send(HostFrame.listClients)
     }
 
-    /// Revokes a client's access; the updated list arrives as `.clientsChanged`.
-    public func revokeClient(_ grantID: String) async {
-        try? await socket?.send(.string(HostFrame.revokeClient(grantID: grantID)))
+    /// Revokes a connection; the updated list arrives as `.clientsChanged`.
+    @discardableResult
+    public func revokeClient(_ grantID: String) async -> Bool {
+        await send(HostFrame.revokeClient(grantID: grantID))
     }
 
     /// Tells the relay what an app sees while the Mac is offline (see `Router.offlineCatalog`),
-    /// or with nil, to forget it. Returns false if not connected.
+    /// or with nil, to forget it.
     @discardableResult
     public func sendOfflineCatalog(clientID: String, catalog: JSONValue?) async -> Bool {
+        await send(HostFrame.offlineCatalog(clientID: clientID, catalog: catalog))
+    }
+
+    private func send(_ frame: String) async -> Bool {
         guard let socket else { return false }
-        return (try? await socket.send(.string(HostFrame.offlineCatalog(clientID: clientID, catalog: catalog)))) != nil
+        do {
+            try await socket.send(.string(frame))
+            return true
+        } catch {
+            trace("send failed: \(error)")
+            return false
+        }
     }
 
     /// Connects and reconnects (with jittered backoff) until the calling task is cancelled.
@@ -100,7 +121,7 @@ public actor RelayClient {
     /// waiting out a backoff. For when the network changes or the Mac wakes up: the old
     /// socket is probably dead, and waiting for the keepalive to notice takes up to a minute.
     public func reconnectNow() {
-        backoff = 1
+        backoff = Self.firstBackoff
         skipNextWait = socket != nil
         socket?.cancel(with: .goingAway, reason: nil)
         backoffWait?.cancel()
@@ -109,7 +130,7 @@ public actor RelayClient {
     private func loop() async {
         while !Task.isCancelled {
             onStatus(.connecting)
-            let attemptStarted = Date()
+            let attemptStarted = ContinuousClock.now
             do {
                 try await connectAndServe()
             } catch {
@@ -118,14 +139,13 @@ public actor RelayClient {
             }
             for task in inflight.values { task.cancel() }
             inflight.removeAll()
-            // A connection that stayed up for a while was healthy; start over with short waits.
-            if Date().timeIntervalSince(attemptStarted) > 60 { backoff = 1 }
+            if ContinuousClock.now - attemptStarted > Self.healthyConnection { backoff = Self.firstBackoff }
             if skipNextWait {
                 skipNextWait = false
                 continue
             }
             let delay = backoff * Double.random(in: 0.8...1.2)
-            backoff = min(backoff * 2, 30)
+            backoff = min(backoff * 2, Self.longestBackoff)
             let wait = Task { _ = try? await Task.sleep(for: .seconds(delay)) }
             backoffWait = wait
             await wait.value
@@ -138,7 +158,7 @@ public actor RelayClient {
         request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
         request.setValue(String(RelayProtocol.version), forHTTPHeaderField: "Porchlight-Protocol")
         let ws = session.webSocketTask(with: request)
-        ws.maximumMessageSize = 32 * 1024 * 1024
+        ws.maximumMessageSize = Self.maxMessageSize
         ws.resume()
         socket = ws
         defer {
@@ -153,7 +173,7 @@ public actor RelayClient {
             throw RelayError.handshake(status: (ws.response as? HTTPURLResponse)?.statusCode, underlying: error)
         }
         onStatus(.connected)
-        lastPong = Date()
+        lastPong = .now
         try? await ws.send(.string(HostFrame.listClients))
 
         let keepalive = Task { await self.keepalive(ws) }
@@ -170,8 +190,8 @@ public actor RelayClient {
         while !Task.isCancelled {
             try? await Task.sleep(for: Self.pingInterval)
             if Task.isCancelled { return }
-            if Date().timeIntervalSince(lastPong) > Self.pongTimeout {
-                trace("no pong for \(Int(Date().timeIntervalSince(lastPong)))s; reconnecting")
+            if ContinuousClock.now - lastPong > Self.pongTimeout {
+                trace("no pong for \(ContinuousClock.now - lastPong); reconnecting")
                 // Unblocks the receive loop with an error, which triggers a reconnect.
                 ws.cancel(with: .goingAway, reason: nil)
                 return
@@ -185,7 +205,7 @@ public actor RelayClient {
         switch RelayFrame.decode(text) {
         case .pong:
             trace("pong")
-            lastPong = Date()
+            lastPong = .now
         case .req(let request):
             let responder = Self.responder(for: request.id, on: ws)
             let handler = self.handler
@@ -225,9 +245,9 @@ public actor RelayClient {
                 headers: [
                     ("content-type", "application/json"),
                     ("accept", "application/json"),
-                    ("porchlight-client-id", encode(item.clientID)),
-                    ("porchlight-client-name", encode(item.clientName)),
-                    (Router.queuedAtHeader, item.queuedAt.formatted(.iso8601)),
+                    (RelayProtocol.clientIDHeader, encode(item.clientID)),
+                    (RelayProtocol.clientNameHeader, encode(item.clientName)),
+                    (RelayProtocol.queuedAtHeader, item.queuedAt.formatted(.iso8601)),
                 ],
                 body: body
             )
@@ -237,7 +257,7 @@ public actor RelayClient {
         ledger.add(item.id)
         queuedRunning.remove(item.id)
         onEvent(.queuedFinished(item, outcome))
-        try? await socket?.send(.string(HostFrame.queuedDone(id: item.id)))
+        await send(HostFrame.queuedDone(id: item.id))
     }
 
     /// Sends go straight to the socket the request arrived on. If that socket has since
@@ -275,15 +295,6 @@ public enum RelayError: LocalizedError {
     }
 }
 
-/// How a queued request went, for the app to sum up.
-public enum QueuedOutcome: Sendable, Equatable {
-    case ran
-    /// Declined, blocked, or the tool reported an error.
-    case failed
-    /// It couldn't be opened, e.g. sealed to this Mac's previous key.
-    case unreadable
-}
-
 /// Collects a response nobody is waiting for, just to tell whether the call worked.
 private final class CollectedResponse: Sendable {
     private let state = Locked((status: 0, body: Data()))
@@ -300,6 +311,6 @@ private final class CollectedResponse: Sendable {
     var succeeded: Bool {
         let (status, body) = state.value
         guard (200..<300).contains(status), let response = try? JSONValue.parse(body) else { return false }
-        return response["error"] == nil && response["result"]?["isError"] != .bool(true)
+        return response.failure == nil
     }
 }

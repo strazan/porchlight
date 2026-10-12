@@ -8,7 +8,7 @@ struct ToolPermissionsView: View {
 
     let config: ServerConfig
     @Binding var policy: ToolPolicy
-    @State private var tools: [Router.ToolSummary]?
+    @State private var tools: [ToolSummary]?
     @State private var error: String?
 
     var body: some View {
@@ -53,15 +53,15 @@ struct ToolPermissionsView: View {
         return count == 0 ? "All tools on Default" : count == 1 ? "1 tool set individually" : "\(count) tools set individually"
     }
 
-    private func row(_ tool: Router.ToolSummary) -> some View {
+    private func row(_ tool: ToolSummary) -> some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(tool.title ?? tool.name).font(.body.weight(.medium))
-                    if tool.readOnly { Badge(text: "read-only", color: .green) }
-                    if tool.destructive { Badge(text: "destructive", color: .red) }
+                    Text(tool.hints.title ?? tool.name).font(.body.weight(.medium))
+                    if tool.hints.readOnly { Badge(text: "read-only", color: .green) }
+                    if tool.hints.declaresDestructive { Badge(text: "destructive", color: .red) }
                 }
-                if tool.title != nil {
+                if tool.hints.title != nil {
                     Text(tool.name).font(.caption.monospaced()).foregroundStyle(.secondary)
                 }
                 if let description = tool.description {
@@ -71,7 +71,7 @@ struct ToolPermissionsView: View {
             Spacer(minLength: 12)
             VStack(alignment: .trailing, spacing: 4) {
                 Picker("Permission", selection: binding(for: tool)) {
-                    Text("Default (\(policy.defaultPermission(readOnly: tool.readOnly).title))").tag(ToolPermission?.none)
+                    Text("Default (\(policy.defaultPermission(readOnly: tool.hints.readOnly).title))").tag(ToolPermission?.none)
                     Divider()
                     ForEach(ToolPermission.allCases, id: \.self) { Text($0.title).tag(ToolPermission?.some($0)) }
                 }
@@ -79,7 +79,7 @@ struct ToolPermissionsView: View {
                 .pickerStyle(.menu)
                 .fixedSize()
                 // Read-only calls can't wait: nobody would get the answer.
-                if !tool.readOnly {
+                if !tool.hints.readOnly {
                     Toggle("Queue when offline", isOn: queueBinding(for: tool))
                         .toggleStyle(.checkbox)
                         .controlSize(.small)
@@ -92,7 +92,7 @@ struct ToolPermissionsView: View {
         .padding(.vertical, 4)
     }
 
-    private func binding(for tool: Router.ToolSummary) -> Binding<ToolPermission?> {
+    private func binding(for tool: ToolSummary) -> Binding<ToolPermission?> {
         Binding(
             get: { policy.overrides[tool.name] },
             set: { policy.overrides[tool.name] = $0 }
@@ -100,10 +100,10 @@ struct ToolPermissionsView: View {
     }
 
     /// Stores an override only when it differs from the default (on for additive tools).
-    private func queueBinding(for tool: Router.ToolSummary) -> Binding<Bool> {
+    private func queueBinding(for tool: ToolSummary) -> Binding<Bool> {
         Binding(
-            get: { policy.queuesOffline(tool.name, readOnly: tool.readOnly, destructive: !tool.additive) },
-            set: { policy.offline[tool.name] = $0 == tool.additive ? nil : $0 }
+            get: { policy.queuesOffline(tool.name, readOnly: tool.hints.readOnly, destructive: tool.hints.destructive) },
+            set: { policy.offline[tool.name] = $0 == tool.hints.additive ? nil : $0 }
         )
     }
 

@@ -32,11 +32,11 @@ public struct ToolPolicy: Codable, Sendable, Hashable {
         case defaultPermission, overrides, offline
     }
 
+    /// Every field is optional, for server lists written by hand (see `porchlight-cli --config`).
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        defaultPermission = try container.decode(Default.self, forKey: .defaultPermission)
-        overrides = try container.decode([String: ToolPermission].self, forKey: .overrides)
-        // Saved before offline queueing existed.
+        defaultPermission = try container.decodeIfPresent(Default.self, forKey: .defaultPermission) ?? .askForChanges
+        overrides = try container.decodeIfPresent([String: ToolPermission].self, forKey: .overrides) ?? [:]
         offline = try container.decodeIfPresent([String: Bool].self, forKey: .offline) ?? [:]
     }
 
@@ -60,110 +60,5 @@ public struct ToolPolicy: Codable, Sendable, Hashable {
         case .askAll: .ask
         case .askForChanges: readOnly ? .allow : .ask
         }
-    }
-}
-
-/// The owner's answer when a tool call needs approval.
-public enum ToolApproval: Sendable, Equatable {
-    case allowOnce
-    /// Allow, and stop asking for this tool. The app persists the override.
-    case allowAlways
-    case deny
-}
-
-/// A tool call waiting for the owner's approval.
-public struct ToolApprovalRequest: Sendable, Identifiable, Equatable {
-    public let id = UUID()
-    /// Empty for requests that didn't come through the relay's OAuth.
-    public let clientID: String
-    public let clientName: String
-    public let server: String
-    public let tool: String
-    /// The tool's title, if it has one.
-    public let title: String?
-    public let arguments: JSONValue
-    /// When the app made the call, for one saved while the Mac was offline.
-    public let queuedAt: Date?
-
-    public init(clientID: String = "", clientName: String, server: String, tool: String, title: String?, arguments: JSONValue, queuedAt: Date? = nil) {
-        self.clientID = clientID
-        self.clientName = clientName
-        self.server = server
-        self.tool = tool
-        self.title = title
-        self.arguments = arguments
-        self.queuedAt = queuedAt
-    }
-}
-
-/// Who sent a request, as the relay identified them.
-public struct ClientIdentity: Sendable, Equatable {
-    public let id: String
-    public let name: String
-
-    public init(id: String, name: String) {
-        self.id = id
-        self.name = name
-    }
-
-    /// Requests that didn't come through the relay's OAuth (e.g. local testing).
-    public static let unknown = ClientIdentity(id: "", name: "Unknown app")
-
-    init(headers request: HTTPRequest) {
-        let decode = { (name: String) in request.header(name).flatMap { $0.removingPercentEncoding } ?? "" }
-        let name = displayName(decode("porchlight-client-name"))
-        self.init(id: decode("porchlight-client-id"), name: name.isEmpty ? Self.unknown.name : name)
-    }
-}
-
-/// Apps name themselves when they register. Keeps a name to one plain line, so it can't fake a
-/// second line ("Published by…") or reorder text with direction overrides.
-public func displayName(_ name: String, limit: Int = 80) -> String {
-    var plain = ""
-    var space = false
-    for scalar in name.unicodeScalars {
-        // Invisible formatting (direction overrides, zero-width spaces) goes; breaks become spaces.
-        if scalar.properties.generalCategory == .format { continue }
-        if scalar.properties.generalCategory == .control || scalar.properties.isWhitespace {
-            space = !plain.isEmpty
-        } else {
-            if space { plain.unicodeScalars.append(" ") }
-            plain.unicodeScalars.append(scalar)
-            space = false
-        }
-    }
-    return plain.count > limit ? String(plain.prefix(limit)) : plain
-}
-
-/// One request through Porchlight, for the activity log.
-public struct ActivityEvent: Sendable, Identifiable {
-    public enum Outcome: Sendable, Equatable {
-        case ok
-        case error(String)
-        /// Blocked by a permission, or declined by the owner.
-        case denied(String)
-    }
-
-    public let id = UUID()
-    public let date: Date
-    public let client: ClientIdentity
-    /// The server the request was for, when it was for one (a tool call, or a per-server endpoint).
-    public let server: String?
-    public let method: String
-    public let tool: String?
-    public let duration: Duration
-    public let outcome: Outcome
-    /// When the app made the request, for one saved while the Mac was offline.
-    public let queuedAt: Date?
-
-    public init(date: Date, client: ClientIdentity, server: String?, method: String, tool: String?, duration: Duration, outcome: Outcome, queuedAt: Date? = nil) {
-        self.date = date
-        self.client = client
-        self.server = server
-        self.method = method
-        self.tool = tool
-        self.duration = duration
-        self.outcome = outcome
-        self.queuedAt = queuedAt
     }
 }

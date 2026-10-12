@@ -73,7 +73,7 @@ public enum ConfigImporter {
     }
 
     /// Where imported extensions live: `~/Library/Application Support/Porchlight/Extensions`.
-    public static func extensionsDirectory(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+    static func extensionsDirectory(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
         home.appending(path: "Library/Application Support/Porchlight/Extensions")
     }
 
@@ -154,8 +154,8 @@ public enum ConfigImporter {
             }
             if type == "http" || type == "streamable-http" {
                 guard let url = entry["url"]?.stringValue, let host = URL(string: url)?.host() else { return unsupported("No URL") }
-                // A server on the internet doesn't need Porchlight: cloud apps can reach it directly.
-                guard isLocal(host) else { return unsupported("Remote server: cloud agents can reach it directly") }
+                // A server on the internet doesn't need Porchlight: cloud agents can reach it directly.
+                guard Hosts.isLocal(host) else { return unsupported("Remote server: cloud agents can reach it directly") }
                 var headers: [String: String] = [:]
                 if case .object(let raw)? = entry["headers"] { headers = raw.compactMapValues(\.stringValue) }
                 let config = ServerConfig(name: ServerConfig.slug(name), url: url, headers: headers)
@@ -170,16 +170,6 @@ public enum ConfigImporter {
             let config = ServerConfig(name: ServerConfig.slug(name), command: command, args: args, env: env)
             return ImportCandidate(source: source, scope: scope, originalName: name, config: config, unsupportedReason: nil)
         }
-    }
-
-    /// Loopback, `.local` and private-network addresses.
-    static func isLocal(_ host: String) -> Bool {
-        let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
-        if ["localhost", "127.0.0.1", "::1", "0.0.0.0"].contains(host) || host.hasSuffix(".local") { return true }
-        let octets = host.split(separator: ".").compactMap { Int($0) }
-        guard octets.count == 4 else { return false }
-        return octets[0] == 10 || octets[0] == 127 || (octets[0] == 192 && octets[1] == 168)
-            || (octets[0] == 172 && (16...31).contains(octets[1]))
     }
 }
 
