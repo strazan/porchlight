@@ -4,11 +4,12 @@ The relay (a Cloudflare Worker + Durable Object, or any compatible server) and t
 host (the Porchlight app on your Mac) talk over a single WebSocket that the **host
 opens outbound**. The relay never connects to the host.
 
-The relay is deliberately MCP-agnostic: it tunnels raw HTTP requests to the host and
-streams raw HTTP responses back. All MCP logic (Streamable HTTP, aggregation,
-policy) lives on the host. The relay's own jobs are OAuth (it is the authorization
-server for `<origin>/mcp`, which by path prefix also covers `/mcp/<name>`) and asking
-the host to approve new clients.
+While the host is connected, the relay is MCP-agnostic: it tunnels raw HTTP requests to
+the host and streams raw HTTP responses back. All MCP logic (Streamable HTTP,
+aggregation, permissions) lives on the host. The relay's own jobs are OAuth (it is the
+authorization server for `<origin>/mcp`, which by path prefix also covers `/mcp/<name>`)
+and asking the host to approve new clients. The one place it reads MCP is while the host
+is offline (see [Offline queue](#offline-queue)).
 
 ## Connecting
 
@@ -35,7 +36,7 @@ chunks are base64 (`*_b64`) so that frames stay valid JSON.
 | type | fields | meaning |
 |---|---|---|
 | `req` | `id`, `method`, `path`, `headers` (`[[name, value], …]`), `body_b64` | An incoming HTTP request. `path` includes the query string. |
-| `cancel` | `id` | The client went away; stop work and send nothing more for `id`. |
+| `cancel` | `id` | Stop work and send nothing more for `id`: the client went away, its connection was revoked, or a `res_chunk` for it wasn't valid base64. |
 | `pair_request` | `id`, `code`, `client_id`, `client_name`, `client_domain?`, `redirect_host`, `loopback` | An app is on the consent page. Show its details and `code` (the page shows the same code) and answer with `pair_decision`. Re-sent on reconnect while pending; expires after 10 minutes. At most 5 wait at once (anyone can open the consent page); more get a "try again later" page. `client_name` is one plain line of at most 80 characters. |
 | `clients` | `items: [{grant_id, client_id, client_name, client_domain?, created_at}]` | The apps that currently have access. Sent after `list_clients`, after a pairing completes, and after `revoke_client`. |
 | `queued` | `id`, `client_id`, `client_name`, `path`, `queued_at` (Unix ms), `sealed` | A request saved while the host was offline (see [Offline queue](#offline-queue)). Sent on connect, oldest first, and again on every connect until `queued_done`. |
@@ -64,8 +65,8 @@ A host that cannot produce a response sends `res_start` with a 5xx status follow
 The host sends the literal message `{"type":"ping"}` and the relay answers the literal
 message `{"type":"pong"}`. Because both are exact strings, the Cloudflare relay answers
 them with `setWebSocketAutoResponse`, without waking the hibernated Durable Object, so an
-idle connection costs nothing. If the host gets no `pong` within ~10 s, it should
-reconnect.
+idle connection costs nothing. The host pings every 30 s and reconnects if it has heard no
+`pong` for 45 s.
 
 ## Request IDs
 
@@ -75,14 +76,22 @@ concurrently, and SSE responses may stay open for a long time.
 
 ## Header handling
 
-The relay strips hop-by-hop headers and `Authorization` before forwarding, and replaces
-any `Porchlight-*` headers from the client with its own:
+Requests: the relay drops `Authorization`, `Proxy-Authorization`, `Host`, `Content-Length`,
+`X-Real-IP`, `cf-*` and the hop-by-hop headers (`Connection`, `Keep-Alive`, `TE`, `Trailer`,
+`Transfer-Encoding`, `Upgrade`) before forwarding. It replaces any `Porchlight-*` headers
+from the client with its own:
 
 - `Porchlight-Client-Id`: the OAuth client ID (URI-encoded)
 - `Porchlight-Client-Name`: the name the owner approved (URI-encoded)
 
+Responses: the relay drops the hop-by-hop headers and `Content-Length` from `res_start`,
+and any header a response can't carry. A status outside 200–599 becomes `502`.
+
 ## Timeouts and errors (relay behavior)
 
+- A request from a connection the owner revoked → `401` (`WWW-Authenticate: Bearer
+  error="invalid_token"`), even if its token hasn't been deleted yet.
+- A request body over 8 MB → `413`, before it's read.
 - No host connected, and no offline catalog for the app (or the path) → `503` with a
   JSON-RPC error body:
   `{"jsonrpc":"2.0","id":<id or null>,"error":{"code":-32001,"message":"The Mac running Porchlight is offline"}}`
@@ -108,6 +117,7 @@ answers from the app's **catalog**, the last `offline_catalog` the host sent for
 The host sends one per app with access, when it connects and when servers, permissions
 or access change. Offline, for a path in the catalog:
 
+- Only `POST` is answered (anything else gets `405`), with single messages or batches.
 - `initialize` returns the catalog's result (with the client's protocol version if listed),
   `tools/list` its tools, `ping` an empty result, and `prompts/list`, `resources/list` and
   `resources/templates/list` empty lists. Notifications get `202`.

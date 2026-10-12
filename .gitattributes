@@ -1,0 +1,2 @@
+# Built from relay/ by `make relay-bundle`; reviewed there, not here.
+app/Porchlight/Relay/relay-worker.js linguist-generated=true -diff

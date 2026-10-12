@@ -9,26 +9,31 @@ Thanks for helping out! This covers how the project is put together and how to w
 | `app/Porchlight/` | The macOS menu bar app (SwiftUI), built with `app/Porchlight.xcodeproj` |
 | `app/PorchlightCore/` | Swift package with everything that isn't UI: the relay client, the router and aggregator, stdio and HTTP upstreams, permissions, the Cloudflare deployer, and `porchlight-cli` |
 | `relay/` | The relay: a Cloudflare Worker and Durable Object (TypeScript). It's the OAuth server for MCP clients and tunnels their requests to the Mac over a WebSocket |
-| `protocol/PROTOCOL.md` | The protocol between the relay and the Mac |
-| `docs/` | The website |
+| `relay/e2e/` | End-to-end checks with the official MCP SDK as the app |
+| `protocol/` | The protocol between the relay and the Mac (`PROTOCOL.md`), and test vectors both sides check |
+| `docs/` | The website, porchlight.sh (`site/` publishes it with Cloudflare Workers) |
+| `design/` | Sources for the README's images |
 | `scripts/` | Release tooling |
 
 A request travels like this: an MCP client calls `<relay>/mcp` with an OAuth token → the
 relay checks it and forwards the raw HTTP request over the Mac's WebSocket → the
 `Router` in PorchlightCore picks the combined endpoint (`/mcp`) or one server
 (`/mcp/<name>`), applies per-app access and tool permissions, and talks to the server
-over stdio or HTTP → the response streams back the same way. The relay never parses
-MCP; all of that lives in Swift.
+over stdio or HTTP → the response streams back the same way. While the Mac is online the
+relay doesn't parse MCP; all of that lives in Swift. Its one exception is answering from
+an app's offline catalog while the Mac is away.
 
 ## Requirements
 
 - macOS 14 or later, Xcode 26 or later
-- Node 20 or later (for the relay)
+- Node 20.19 or later (for the relay)
+- Python 3, which the Swift tests use for their fake MCP servers (macOS has it)
 
 ## Common tasks
 
 ```sh
-make test          # relay tests (vitest in workerd) + PorchlightCore tests (Swift Testing)
+make test          # relay tests (vitest in workerd) + PorchlightCore tests (Swift Testing);
+                   # installs the relay's dependencies the first time
 make app           # build and open the app
 make release       # optimized universal build
 make snapshots     # render every screen, light and dark, to app/build/snapshots
@@ -54,7 +59,7 @@ settings), for reviewing UI changes without clicking through the app. Variations
 You can run the whole chain on your Mac without Cloudflare:
 
 ```sh
-cd relay && npm install
+cd relay && npm ci
 echo "HOST_SECRET=dev-secret" > .dev.vars
 npx wrangler dev                     # relay on http://localhost:8787
 ```
@@ -68,8 +73,11 @@ PORCHLIGHT_SECRET=dev-secret .build/debug/porchlight-cli --relay http://localhos
   --name everything -- npx -y @modelcontextprotocol/server-everything
 ```
 
-The CLI serves the app's server list when given no command, asks on the terminal when
-an app wants to connect or call a tool, and `--check` tests every server and exits.
+The CLI serves the app's server list when given no command, and asks on the terminal when
+an app wants to connect or call a tool. `--check` tests every server and exits,
+`--allow-tools` runs tools without asking (blocked ones stay blocked), and `--queue-key
+<file>` turns on the offline queue. `porchlight-cli --help` lists everything. Set
+`PORCHLIGHT_DEBUG=1` to trace the relay connection (pings, reconnects) on stderr.
 
 Connect a client with [MCP Inspector](https://github.com/modelcontextprotocol/inspector)
 (`npx @modelcontextprotocol/inspector`, Streamable HTTP, `http://localhost:8787/mcp`). For
@@ -95,5 +103,6 @@ lists the one-time setup (a notarytool profile and the GitHub CLI).
 ## Style
 
 - Match the surrounding code; comments explain why, not what.
-- Keep the relay MCP-agnostic; protocol logic belongs in PorchlightCore.
+- Keep the relay MCP-agnostic (apart from the offline path); protocol logic belongs in
+  PorchlightCore.
 - New behavior comes with tests. UI changes: check `make snapshots` in light and dark.

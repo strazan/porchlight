@@ -1,7 +1,4 @@
 .DS_Store
 
-# Landing page concepts: screenshots are large and reproducible
-design/concepts/*/shots/
-
-# Concept pages for the landing (kept out of the repo)
+# Concept pages for the landing, kept out of the repository
 design/concepts/

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: relay/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      # The app ships the relay bundle that's committed: it must match relay/.
+      - run: npm run bundle:check
+
+  core:
+    # The Swift package (everything but the app's UI). The app itself builds locally:
+    # its project needs a newer Xcode than hosted runners have.
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app/PorchlightCore
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test

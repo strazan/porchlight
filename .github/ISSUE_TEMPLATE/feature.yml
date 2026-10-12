@@ -1,0 +1,14 @@
+name: Idea
+description: Something Porchlight could do
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you're trying to do
+      description: The problem, more than the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How Porchlight could help

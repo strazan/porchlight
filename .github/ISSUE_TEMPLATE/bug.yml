@@ -1,0 +1,32 @@
+name: Bug report
+description: Something doesn't work as it should
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: From Porchlight → Activity, or the CLI's output. Remove anything private, like API keys or file contents.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Porchlight version
+      description: Settings → General → About
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+  - type: input
+    id: agent
+    attributes:
+      label: Cloud agent and MCP server
+      description: For example "Claude, with the filesystem server"
