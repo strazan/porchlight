@@ -92,6 +92,7 @@ public actor RelayClient {
         await send(HostFrame.offlineCatalog(clientID: clientID, catalog: catalog))
     }
 
+    @discardableResult
     private func send(_ frame: String) async -> Bool {
         guard let socket else { return false }
         do {
