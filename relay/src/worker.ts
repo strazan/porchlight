@@ -22,13 +22,13 @@ export default {
 
 		if (url.pathname === "/health") return Response.json({ ok: true, proto: PROTOCOL_VERSION });
 
-		if (url.pathname === "/agent") {
+		if (url.pathname === "/host") {
 			if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
 				return new Response("Expected WebSocket upgrade", { status: 426 });
 			}
-			if (!env.AGENT_SECRET) return new Response("AGENT_SECRET is not configured", { status: 500 });
+			if (!env.HOST_SECRET) return new Response("HOST_SECRET is not configured", { status: 500 });
 			const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-			if (!(await secretsEqual(token, env.AGENT_SECRET))) return new Response("Unauthorized", { status: 401 });
+			if (!(await secretsEqual(token, env.HOST_SECRET))) return new Response("Unauthorized", { status: 401 });
 			if (request.headers.get("porchlight-protocol") !== String(PROTOCOL_VERSION)) {
 				return new Response(`Unsupported protocol; relay speaks ${PROTOCOL_VERSION}`, { status: 426 });
 			}

@@ -78,7 +78,7 @@ async function answer(raw: unknown, entry: CatalogPath, catalog: Catalog, enqueu
 			);
 		}
 		default:
-			return rpcError(id, -32001, "Porchlight host is offline");
+			return rpcError(id, -32001, "The Mac running Porchlight is offline");
 	}
 }
 

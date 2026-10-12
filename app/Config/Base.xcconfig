@@ -10,6 +10,11 @@
 //
 // It's gitignored, so your team stays out of the repository.
 
+PRODUCT_BUNDLE_IDENTIFIER = sh.porchlight.Porchlight
+// Releases override both (scripts/release.sh): the version, and the commit count as the build.
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
 CODE_SIGN_STYLE = Automatic
 CODE_SIGN_IDENTITY = -
 CODE_SIGN_ENTITLEMENTS = Config/Porchlight.entitlements

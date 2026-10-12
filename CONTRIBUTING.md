@@ -55,7 +55,7 @@ You can run the whole chain on your Mac without Cloudflare:
 
 ```sh
 cd relay && npm install
-echo "AGENT_SECRET=dev-secret" > .dev.vars
+echo "HOST_SECRET=dev-secret" > .dev.vars
 npx wrangler dev                     # relay on http://localhost:8787
 ```
 

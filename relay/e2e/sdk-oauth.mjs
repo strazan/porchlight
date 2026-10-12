@@ -37,7 +37,7 @@ async function consentPage(authUrl) {
   const field = (n) => html.match(new RegExp(`name="${n}" value="([^"]*)"`))?.[1] ?? "";
   log("consent page shows code", html.match(/class="code">([^<]+)</)?.[1]);
   const pairing = field("pairing");
-  if (!pairing) throw new Error("The consent page says the Porchlight host is offline. Is it running and connected?");
+  if (!pairing) throw new Error("The consent page says Porchlight is offline. Is it running and connected?");
   for (;;) {
     const { state } = await (await fetch(`${RELAY}/authorize/status?id=${pairing}`)).json();
     if (state === "approved") break;

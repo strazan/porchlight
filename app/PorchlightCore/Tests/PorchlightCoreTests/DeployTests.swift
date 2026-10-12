@@ -89,7 +89,7 @@ let testBundle = try! RelayBundle(
         let steps = Locked<[RelayDeployer.Step]>([])
         // The relay never comes online here; a short timeout keeps the test fast.
         await #expect(throws: DeployError.self) {
-            _ = try await deployer().deploy(account: "acc", agentSecret: "s3cret", liveTimeout: .milliseconds(10)) { step in
+            _ = try await deployer().deploy(account: "acc", hostSecret: "s3cret", liveTimeout: .milliseconds(10)) { step in
                 steps.withLock { $0.append(step) }
             }
         }
@@ -112,7 +112,7 @@ let testBundle = try! RelayBundle(
             return
         }
         #expect(bindings.contains(.object(["type": .string("kv_namespace"), "name": .string("OAUTH_KV"), "namespace_id": .string("kv1")])))
-        #expect(bindings.contains(.object(["type": .string("secret_text"), "name": .string("AGENT_SECRET"), "text": .string("s3cret")])))
+        #expect(bindings.contains(.object(["type": .string("secret_text"), "name": .string("HOST_SECRET"), "text": .string("s3cret")])))
     }
 
     @Test func updatesReuseStorageAndSkipMigrations() async throws {
@@ -125,7 +125,7 @@ let testBundle = try! RelayBundle(
             default: (404, #"{"success":false,"errors":[]}"#)
             }
         }
-        _ = try? await deployer().deploy(account: "acc", agentSecret: "s", liveTimeout: .milliseconds(10))
+        _ = try? await deployer().deploy(account: "acc", hostSecret: "s", liveTimeout: .milliseconds(10))
         let requests = StubCloudflare.requests.value
         #expect(!requests.contains { $0.method == "POST" && $0.path.hasSuffix("kv/namespaces") })
         let upload = try #require(requests.first { $0.method == "PUT" })
@@ -137,7 +137,7 @@ let testBundle = try! RelayBundle(
             (404, #"{"success":false,"errors":[{"code":10007,"message":"workers.api.error.not_found"}]}"#)
         }
         await #expect(throws: DeployError.noWorkersSubdomain) {
-            _ = try await deployer().deploy(account: "acc", agentSecret: "s", liveTimeout: .milliseconds(10))
+            _ = try await deployer().deploy(account: "acc", hostSecret: "s", liveTimeout: .milliseconds(10))
         }
     }
 

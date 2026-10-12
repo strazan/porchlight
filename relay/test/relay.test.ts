@@ -16,7 +16,7 @@ type Send = (f: HostToRelay) => void;
 
 /** A fake Porchlight host connected to the relay. */
 async function connectHost(onRequest: (req: ReqFrame, send: Send) => void = () => {}, queueKey?: string) {
-	const res = await SELF.fetch(`${ORIGIN}/agent`, {
+	const res = await SELF.fetch(`${ORIGIN}/host`, {
 		headers: { upgrade: "websocket", authorization: "Bearer test-secret", "porchlight-protocol": "1" },
 	});
 	expect(res.status).toBe(101);
@@ -175,11 +175,11 @@ describe("relay basics", () => {
 	});
 
 	it("rejects hosts with a bad secret or protocol", async () => {
-		const bad = await SELF.fetch(`${ORIGIN}/agent`, {
+		const bad = await SELF.fetch(`${ORIGIN}/host`, {
 			headers: { upgrade: "websocket", authorization: "Bearer nope", "porchlight-protocol": "1" },
 		});
 		expect(bad.status).toBe(401);
-		const old = await SELF.fetch(`${ORIGIN}/agent`, {
+		const old = await SELF.fetch(`${ORIGIN}/host`, {
 			headers: { upgrade: "websocket", authorization: "Bearer test-secret", "porchlight-protocol": "0" },
 		});
 		expect(old.status).toBe(426);

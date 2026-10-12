@@ -1,9 +1,10 @@
 import Foundation
 import Security
 
-/// Generic-password storage for the relay secret.
+/// Generic-password storage for Porchlight's secrets: the relay secret, the Cloudflare token
+/// and the offline queue key.
 enum Keychain {
-    private static let service = "io.github.strazan.porchlight"
+    private static let service = Bundle.main.bundleIdentifier ?? "sh.porchlight.Porchlight"
 
     static func read(_ account: String) -> String? {
         let query: [String: Any] = [

@@ -121,7 +121,7 @@ public actor StdioUpstream: Upstream {
             "params": .object([
                 "protocolVersion": .string(Self.protocolVersion),
                 "capabilities": .object([:]),
-                "clientInfo": .object(["name": .string("porchlight"), "version": .string("0.0.1")]),
+                "clientInfo": .object(["name": .string("porchlight"), "version": .string(Porchlight.version)]),
             ]),
         ]), timeout: Self.initializeTimeout)
         guard let result = response["result"] else {

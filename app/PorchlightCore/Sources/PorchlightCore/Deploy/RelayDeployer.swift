@@ -71,7 +71,7 @@ public struct RelayDeployer: Sendable {
     public func deploy(
         account: String,
         scriptName: String = defaultScriptName,
-        agentSecret: String,
+        hostSecret: String,
         liveTimeout: Duration = .seconds(120),
         progress: @Sendable (Step) -> Void = { _ in }
     ) async throws -> URL {
@@ -93,7 +93,7 @@ public struct RelayDeployer: Sendable {
             name: scriptName,
             module: bundle.module,
             moduleName: bundle.mainModule,
-            metadata: metadata(kvNamespace: kv.id, agentSecret: agentSecret, firstDeploy: !exists)
+            metadata: metadata(kvNamespace: kv.id, hostSecret: hostSecret, firstDeploy: !exists)
         )
 
         progress(.route)
@@ -105,7 +105,7 @@ public struct RelayDeployer: Sendable {
         return url
     }
 
-    func metadata(kvNamespace: String, agentSecret: String, firstDeploy: Bool) -> JSONValue {
+    func metadata(kvNamespace: String, hostSecret: String, firstDeploy: Bool) -> JSONValue {
         var metadata: [String: JSONValue] = [
             "main_module": .string(bundle.mainModule),
             "compatibility_date": .string(bundle.compatibilityDate),
@@ -113,7 +113,7 @@ public struct RelayDeployer: Sendable {
             "bindings": .array([
                 .object(["type": .string("durable_object_namespace"), "name": .string("HUB"), "class_name": .string("Hub")]),
                 .object(["type": .string("kv_namespace"), "name": .string("OAUTH_KV"), "namespace_id": .string(kvNamespace)]),
-                .object(["type": .string("secret_text"), "name": .string("AGENT_SECRET"), "text": .string(agentSecret)]),
+                .object(["type": .string("secret_text"), "name": .string("HOST_SECRET"), "text": .string(hostSecret)]),
             ]),
             "observability": .object(["enabled": .bool(true)]),
         ]

@@ -86,7 +86,7 @@ public actor Aggregator: MCPEndpoint {
                 "resources": .object([:]),
                 "logging": .object([:]),
             ]),
-            "serverInfo": .object(["name": .string("porchlight"), "title": .string("Porchlight"), "version": .string("0.0.1")]),
+            "serverInfo": .object(["name": .string("porchlight"), "title": .string("Porchlight"), "version": .string(Porchlight.version)]),
             "instructions": .string(
                 "Porchlight combines MCP servers running on the user's computer. Tool and prompt names are "
                     + "prefixed with their server: <server>__<name>. Pick tools from the server that fits the request.\n\n"

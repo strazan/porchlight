@@ -5584,7 +5584,7 @@ async function answer(raw, entry, catalog, enqueue) {
       );
     }
     default:
-      return rpcError(id, -32001, "Porchlight host is offline");
+      return rpcError(id, -32001, "The Mac running Porchlight is offline");
   }
 }
 __name(answer, "answer");
@@ -5681,7 +5681,7 @@ var Hub = class extends DurableObject {
   }
   async fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname === "/agent") return this.acceptHost(url.origin);
+    if (url.pathname === "/host") return this.acceptHost(url.origin);
     return this.forward(request);
   }
   async acceptHost(origin) {
@@ -5904,7 +5904,7 @@ var Hub = class extends DurableObject {
     const writer = writable.getWriter();
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
-        resolve(new Response("Porchlight host did not respond", { status: 504 }));
+        resolve(new Response("Porchlight on the Mac did not respond", { status: 504 }));
         this.finish(id, "timeout");
       }, START_TIMEOUT_MS);
       this.pending.set(id, {
@@ -6071,7 +6071,7 @@ function offline(body) {
   } catch {
   }
   return Response.json(
-    { jsonrpc: "2.0", id, error: { code: -32001, message: "Porchlight host is offline" } },
+    { jsonrpc: "2.0", id, error: { code: -32001, message: "The Mac running Porchlight is offline" } },
     { status: 503 }
   );
 }
@@ -6092,13 +6092,13 @@ var worker_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === "/health") return Response.json({ ok: true, proto: PROTOCOL_VERSION });
-    if (url.pathname === "/agent") {
+    if (url.pathname === "/host") {
       if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
         return new Response("Expected WebSocket upgrade", { status: 426 });
       }
-      if (!env.AGENT_SECRET) return new Response("AGENT_SECRET is not configured", { status: 500 });
+      if (!env.HOST_SECRET) return new Response("HOST_SECRET is not configured", { status: 500 });
       const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-      if (!await secretsEqual(token, env.AGENT_SECRET)) return new Response("Unauthorized", { status: 401 });
+      if (!await secretsEqual(token, env.HOST_SECRET)) return new Response("Unauthorized", { status: 401 });
       if (request.headers.get("porchlight-protocol") !== String(PROTOCOL_VERSION)) {
         return new Response(`Unsupported protocol; relay speaks ${PROTOCOL_VERSION}`, { status: 426 });
       }

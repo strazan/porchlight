@@ -193,7 +193,7 @@ final class IconStore {
 
     nonisolated private static func request(_ url: URL) -> URLRequest {
         var request = URLRequest(url: url, timeoutInterval: 10)
-        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Porchlight/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Porchlight/\(Porchlight.version)", forHTTPHeaderField: "User-Agent")
         return request
     }
 

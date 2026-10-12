@@ -92,7 +92,7 @@ export class Hub extends DurableObject<Env> {
 
 	override async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url);
-		if (url.pathname === "/agent") return this.acceptHost(url.origin);
+		if (url.pathname === "/host") return this.acceptHost(url.origin);
 		return this.forward(request);
 	}
 
@@ -345,7 +345,7 @@ export class Hub extends DurableObject<Env> {
 		return new Promise<Response>((resolve) => {
 			const timer = setTimeout(() => {
 				// Resolve first: finish() would otherwise answer with its generic 502.
-				resolve(new Response("Porchlight host did not respond", { status: 504 }));
+				resolve(new Response("Porchlight on the Mac did not respond", { status: 504 }));
 				this.finish(id, "timeout");
 			}, START_TIMEOUT_MS);
 
@@ -528,7 +528,7 @@ function offline(body: Uint8Array): Response {
 		// not JSON
 	}
 	return Response.json(
-		{ jsonrpc: "2.0", id, error: { code: -32001, message: "Porchlight host is offline" } },
+		{ jsonrpc: "2.0", id, error: { code: -32001, message: "The Mac running Porchlight is offline" } },
 		{ status: 503 },
 	);
 }

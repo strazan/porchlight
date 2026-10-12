@@ -3,7 +3,7 @@
 // Runtime types generated with workerd@1.20261006.1 2026-10-01 global_fetch_strictly_public
 interface __BaseEnv_Env {
 	OAUTH_KV: KVNamespace;
-	AGENT_SECRET: string;
+	HOST_SECRET: string;
 	HUB: DurableObjectNamespace<import("./src/worker").Hub>;
 }
 declare namespace Cloudflare {
@@ -18,7 +18,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "AGENT_SECRET">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "HOST_SECRET">> {}
 }
 declare module "*.txt" {
 	const value: string;

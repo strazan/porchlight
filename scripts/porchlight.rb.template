@@ -16,11 +16,11 @@ cask "porchlight" do
 
   app "Porchlight.app"
 
-  uninstall quit: "io.github.strazan.porchlight"
+  uninstall quit: "sh.porchlight.Porchlight"
 
   zap trash: [
     "~/Library/Application Support/Porchlight",
     "~/Library/Caches/Porchlight",
-    "~/Library/Preferences/io.github.strazan.porchlight.plist",
+    "~/Library/Preferences/sh.porchlight.Porchlight.plist",
   ]
 end

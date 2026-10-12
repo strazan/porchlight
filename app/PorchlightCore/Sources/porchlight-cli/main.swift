@@ -15,7 +15,7 @@ let usage = """
       --check            Connect to each enabled server, report what answers, and exit
       --allow-tools      Run every tool without asking (default: ask on the terminal for
                          tools that don't declare themselves read-only)
-      --queue-key <file> While this host is offline, let the relay save calls to tools
+      --queue-key <file> While this Mac is offline, let the relay save calls to tools
                          that only add something, sealed to the key in <file> (created if
                          missing), and run them when it's back
 
@@ -87,10 +87,10 @@ guard ServerConfig.isValidName(name) else { fail("--name must be lowercase lette
 guard let secret = ProcessInfo.processInfo.environment["PORCHLIGHT_SECRET"], !secret.isEmpty else {
     fail("PORCHLIGHT_SECRET is not set")
 }
-guard let relayURL = agentURL(from: relayArg) else { fail("invalid relay URL \(relayArg)") }
+guard let relayURL = hostURL(from: relayArg) else { fail("invalid relay URL \(relayArg)") }
 
 /// Accepts the relay's public URL and derives its WebSocket endpoint.
-func agentURL(from string: String) -> URL? {
+func hostURL(from string: String) -> URL? {
     guard var components = URLComponents(string: string) else { return nil }
     switch components.scheme {
     case "https": components.scheme = "wss"
@@ -98,7 +98,7 @@ func agentURL(from string: String) -> URL? {
     case "wss", "ws": break
     default: return nil
     }
-    if components.path.isEmpty || components.path == "/" { components.path = "/agent" }
+    if components.path.isEmpty || components.path == "/" { components.path = "/host" }
     return components.url
 }
 
@@ -161,7 +161,7 @@ let client = RelayClient(
     url: relayURL,
     secret: secret,
     handler: router,
-    appVersion: "cli-0.0.1",
+    appVersion: "cli-\(Porchlight.version)",
     queueKey: queueKey,
     ledger: QueueLedger(file: queueKeyArg.map { URL(fileURLWithPath: $0 + ".finished.json") }),
     onStatus: { status in
@@ -192,7 +192,7 @@ Task {
         case .clientsChanged(let clients):
             let names = clients.map(\.clientName)
             stderrLog("apps with access: \(names.isEmpty ? "none" : names.joined(separator: ", "))")
-            // What each app sees, and may queue, while this host is offline.
+            // What each app sees, and may queue, while this Mac is offline.
             guard queueKey != nil else { continue }
             for clientID in Set(clients.map(\.clientID)) where !clientID.isEmpty {
                 await client.sendOfflineCatalog(clientID: clientID, catalog: await router.offlineCatalog(for: clientID))

@@ -14,6 +14,6 @@
   "kv_namespaces": [{ "binding": "OAUTH_KV" }],
   "observability": { "enabled": true }
   // Secrets (not in this file):
-  //   AGENT_SECRET — shared with the Porchlight app. `wrangler secret put AGENT_SECRET`
+  //   HOST_SECRET — shared with the Porchlight app. `wrangler secret put HOST_SECRET`
   //   For local dev put it in .dev.vars
 }

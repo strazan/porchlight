@@ -3,7 +3,7 @@
 //   2. the host goes away; the SDK still lists tools, and a call to an additive tool is saved
 //   3. the host comes back with the same queue key and runs the saved call
 //
-// Needs `npx wrangler dev` (with AGENT_SECRET in .dev.vars) and a built CLI
+// Needs `npx wrangler dev` (with HOST_SECRET in .dev.vars) and a built CLI
 // (`swift build` in app/PorchlightCore). Then: npm run e2e:queue
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -18,7 +18,7 @@ const RELAY = process.env.RELAY ?? "http://localhost:8787";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const CLI = join(root, "app/PorchlightCore/.build/debug/porchlight-cli");
 const FAKE = join(root, "app/PorchlightCore/Tests/PorchlightCoreTests/Fixtures/fake_server.py");
-const SECRET = readFileSync(new URL("../.dev.vars", import.meta.url), "utf8").match(/AGENT_SECRET=(.*)/)[1].trim();
+const SECRET = readFileSync(new URL("../.dev.vars", import.meta.url), "utf8").match(/HOST_SECRET=(.*)/)[1].trim();
 const log = (...a) => console.log("•", ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function check(ok, message) {

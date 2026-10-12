@@ -13,13 +13,13 @@ the host to approve new clients.
 ## Connecting
 
 ```
-GET /agent
+GET /host
 Upgrade: websocket
-Authorization: Bearer <AGENT_SECRET>
+Authorization: Bearer <HOST_SECRET>
 Porchlight-Protocol: 1
 ```
 
-- `AGENT_SECRET` is a long random secret shared between relay and host.
+- `HOST_SECRET` is a long random secret shared between relay and host.
 - The relay rejects mismatched secrets with `401` and unsupported protocol
   versions with `426`.
 - Only one host may be connected. A new host connection replaces the old one
@@ -85,7 +85,7 @@ any `Porchlight-*` headers from the client with its own:
 
 - No host connected, and no offline catalog for the app (or the path) → `503` with a
   JSON-RPC error body:
-  `{"jsonrpc":"2.0","id":<id or null>,"error":{"code":-32001,"message":"Porchlight host is offline"}}`
+  `{"jsonrpc":"2.0","id":<id or null>,"error":{"code":-32001,"message":"The Mac running Porchlight is offline"}}`
 - No `res_start` within 60 s → `504`.
 - Host disconnects before `res_start` → `502`; after it → the stream ends where it is.
 

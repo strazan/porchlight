@@ -474,7 +474,7 @@ private struct RelayTab: View {
             Section {
                 DisclosureGroup("Use a relay you deployed yourself", isExpanded: $showAdvanced) {
                     TextField("URL", text: $relayURL, prompt: Text("https://porchlight-relay.you.workers.dev"))
-                    SecureField("Secret", text: $secret, prompt: Text("AGENT_SECRET"))
+                    SecureField("Secret", text: $secret, prompt: Text("HOST_SECRET"))
                     HStack {
                         Spacer()
                         Button("Save & Reconnect") { save() }

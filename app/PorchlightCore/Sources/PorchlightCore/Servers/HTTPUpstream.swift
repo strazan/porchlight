@@ -124,7 +124,7 @@ public actor HTTPUpstream: Upstream {
             "params": .object([
                 "protocolVersion": .string(StdioUpstream.protocolVersion),
                 "capabilities": .object([:]),
-                "clientInfo": .object(["name": .string("porchlight"), "version": .string("0.0.1")]),
+                "clientInfo": .object(["name": .string("porchlight"), "version": .string(Porchlight.version)]),
             ]),
         ]), onProgress: nil)
         guard let result = response["result"] else {

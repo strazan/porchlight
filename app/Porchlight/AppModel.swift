@@ -26,7 +26,7 @@ final class AppModel {
             if relayURL != oldValue { defaults.set(true, forKey: "lockUnknownApps") }
         }
     }
-    var secret: String { didSet { if !isPreview { Keychain.write("agentSecret", secret) } } }
+    var secret: String { didSet { if !isPreview { Keychain.write("relaySecret", secret) } } }
     var keepAwake: Bool {
         didSet {
             defaults.set(keepAwake, forKey: "keepAwake")
@@ -159,8 +159,8 @@ final class AppModel {
         self.store = store
         isPreview = preview
         icons = IconStore(defaults: defaults, preview: preview)
-        relayURL = defaults.string(forKey: "relayURL") ?? "http://localhost:8787"
-        secret = preview ? "" : Keychain.read("agentSecret") ?? ""
+        relayURL = defaults.string(forKey: "relayURL") ?? ""
+        secret = preview ? "" : Keychain.read("relaySecret") ?? ""
         keepAwake = defaults.bool(forKey: "keepAwake")
         clientAccess = (defaults.dictionary(forKey: "clientAccess") as? [String: [String]] ?? [:]).mapValues(Set.init)
         deployment = defaults.data(forKey: "deployment").flatMap { try? JSONDecoder().decode(Deployment.self, from: $0) }
@@ -192,7 +192,7 @@ final class AppModel {
 
     // MARK: Derived state
 
-    var isConfigured: Bool { !secret.isEmpty && agentURL != nil }
+    var isConfigured: Bool { !secret.isEmpty && hostURL != nil }
     /// Set up enough to show the connector and servers, rather than the getting-started steps.
     var isSetUp: Bool { isConfigured }
     /// Settings opens on this tab next (e.g. "Set Up Porchlight…" opens the Relay tab).
@@ -221,7 +221,7 @@ final class AppModel {
     }
 
     /// The relay's WebSocket endpoint, derived from its public URL.
-    var agentURL: URL? {
+    var hostURL: URL? {
         guard var components = URLComponents(string: relayURL.trimmingCharacters(in: .whitespaces)) else { return nil }
         switch components.scheme {
         case "https": components.scheme = "wss"
@@ -229,7 +229,7 @@ final class AppModel {
         default: return nil
         }
         guard components.host != nil else { return nil }
-        components.path = "/agent"
+        components.path = "/host"
         return components.url
     }
 
@@ -350,7 +350,7 @@ final class AppModel {
     }
 
     func start() async {
-        guard state == .off, let url = agentURL else { return }
+        guard state == .off, let url = hostURL else { return }
         state = .starting
         log("Resolving shell environment…")
         let environment = await ShellEnvironment.resolve()
@@ -379,7 +379,7 @@ final class AppModel {
             url: url,
             secret: secret,
             handler: router,
-            appVersion: "app-0.0.1",
+            appVersion: "app-\(Porchlight.version)",
             queueKey: Self.queueKey(),
             ledger: QueueLedger(file: Self.supportDirectory.appending(path: "queue-finished.json")),
             onStatus: { [weak self] status in
@@ -440,17 +440,17 @@ final class AppModel {
     ) async throws -> URL {
         guard let bundledRelay else { throw DeployError.bundleMissing }
         let sameTarget = deployment?.accountID == account.id
-        let agentSecret = sameTarget && !secret.isEmpty ? secret : Self.newSecret()
+        let hostSecret = sameTarget && !secret.isEmpty ? secret : Self.newSecret()
         let scriptName = deployment?.scriptName ?? RelayDeployer.defaultScriptName
         let deployer = RelayDeployer(api: CloudflareAPI(token: token), bundle: bundledRelay)
         log("Deploying the relay to \(account.name)…")
-        let url = try await deployer.deploy(account: account.id, scriptName: scriptName, agentSecret: agentSecret, progress: progress)
+        let url = try await deployer.deploy(account: account.id, scriptName: scriptName, hostSecret: hostSecret, progress: progress)
 
         Keychain.write("cloudflareToken", token)
         deployment = Deployment(accountID: account.id, accountName: account.name, scriptName: scriptName, relaySHA: bundledRelay.sha256)
         relayURL = url.absoluteString
-        if agentSecret != secret { secret = agentSecret }
-        if !isPreview, Keychain.read("agentSecret") != agentSecret {
+        if hostSecret != secret { secret = hostSecret }
+        if !isPreview, Keychain.read("relaySecret") != hostSecret {
             log("Couldn't save the relay's secret in the Keychain: after Porchlight restarts, update the relay to connect again")
         }
         log("Relay deployed at \(url.absoluteString)")
