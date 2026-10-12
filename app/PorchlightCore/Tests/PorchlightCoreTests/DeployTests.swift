@@ -58,9 +58,18 @@ final class StubCloudflare: URLProtocol, @unchecked Sendable {
 
 func ok(_ result: String) -> (Int, String) { (200, #"{"success":true,"errors":[],"result":\#(result)}"#) }
 
+func paged(_ result: String, page: Int, of pages: Int) -> (Int, String) {
+    (200, #"{"success":true,"errors":[],"result":\#(result),"result_info":{"page":\#(page),"total_pages":\#(pages)}}"#)
+}
+
 let testBundle = try! RelayBundle(
     module: Data("export default {}".utf8),
-    manifest: try! JSONValue.parse(Data(#"{"main_module":"worker.js","compatibility_date":"2026-10-01","compatibility_flags":["global_fetch_strictly_public"],"durable_object_classes":["Hub"],"sha256":"abc"}"#.utf8))
+    manifest: try! JSONValue.parse(Data(#"""
+        {"main_module":"worker.js","compatibility_date":"2026-10-01","compatibility_flags":["global_fetch_strictly_public"],
+         "bindings":[{"type":"durable_object_namespace","name":"HUB","class_name":"Hub"},{"type":"kv_namespace","name":"OAUTH_KV"},
+                     {"type":"secret_text","name":"HOST_SECRET"}],
+         "migration":{"new_tag":"v1","new_sqlite_classes":["Hub"]},"observability":{"enabled":true},"sha256":"abc"}
+        """#.utf8))
 )
 
 /// Tests share the stub's static state, so they run one at a time.
@@ -78,7 +87,7 @@ let testBundle = try! RelayBundle(
         StubCloudflare.respond = { method, path in
             switch (method, path) {
             case ("GET", "accounts/acc/workers/subdomain"): ok(#"{"subdomain":"sigge"}"#)
-            case ("GET", "accounts/acc/storage/kv/namespaces?per_page=100"): ok("[]")
+            case ("GET", "accounts/acc/storage/kv/namespaces?per_page=100&page=1"): ok("[]")
             case ("POST", "accounts/acc/storage/kv/namespaces"): ok(#"{"id":"kv1","title":"porchlight-relay-oauth"}"#)
             case ("GET", "accounts/acc/workers/scripts"): ok("[]")
             case ("PUT", "accounts/acc/workers/scripts/porchlight-relay"): ok("{}")
@@ -106,7 +115,8 @@ let testBundle = try! RelayBundle(
         let metadata = try #require(multipartPart(named: "metadata", in: upload))
         #expect(metadata["main_module"] == .string("worker.js"))
         #expect(metadata["compatibility_flags"] == .array([.string("global_fetch_strictly_public")]))
-        #expect(metadata["migrations"]?["new_sqlite_classes"] == .array([.string("Hub")]))
+        #expect(metadata["migrations"] == .object(["new_tag": .string("v1"), "new_sqlite_classes": .array([.string("Hub")])]))
+        #expect(metadata["observability"] == .object(["enabled": .bool(true)]))
         guard case .array(let bindings)? = metadata["bindings"] else {
             Issue.record("no bindings")
             return
@@ -116,10 +126,13 @@ let testBundle = try! RelayBundle(
     }
 
     @Test func updatesReuseStorageAndSkipMigrations() async throws {
+        // Also: listings follow pages, so the namespace on page 2 is found rather than duplicated.
         StubCloudflare.respond = { method, path in
             switch (method, path) {
             case ("GET", "accounts/acc/workers/subdomain"): ok(#"{"subdomain":"sigge"}"#)
-            case ("GET", "accounts/acc/storage/kv/namespaces?per_page=100"): ok(#"[{"id":"kv1","title":"porchlight-relay-oauth"}]"#)
+            // The namespace is on the second page.
+            case ("GET", "accounts/acc/storage/kv/namespaces?per_page=100&page=1"): paged(#"[{"id":"other","title":"other"}]"#, page: 1, of: 2)
+            case ("GET", "accounts/acc/storage/kv/namespaces?per_page=100&page=2"): paged(#"[{"id":"kv1","title":"porchlight-relay-oauth"}]"#, page: 2, of: 2)
             case ("GET", "accounts/acc/workers/scripts"): ok(#"[{"id":"porchlight-relay"}]"#)
             case ("PUT", _), ("POST", _): ok("{}")
             default: (404, #"{"success":false,"errors":[]}"#)

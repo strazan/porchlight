@@ -4,8 +4,12 @@ DERIVED_DATA := app/build
 
 test: test-relay test-app
 
-test-relay:
-	cd relay && npm test && npx tsc --noEmit && node scripts/bundle.mjs --check
+test-relay: relay/node_modules
+	cd relay && npm test && npm run typecheck && npm run bundle:check
+
+relay/node_modules: relay/package-lock.json
+	cd relay && npm ci
+	@touch $@
 
 # The relay the app deploys: rebuild after changing relay/.
 relay-bundle:

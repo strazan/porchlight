@@ -2,11 +2,11 @@ import Foundation
 
 /// The relay Worker as built by `npm run bundle` in relay/.
 public struct RelayBundle: Sendable {
-    public let module: Data
-    public let mainModule: String
-    public let compatibilityDate: String
-    public let compatibilityFlags: [String]
-    public let durableObjectClasses: [String]
+    let module: Data
+    let mainModule: String
+    /// What wrangler would send with the script (see relay/scripts/bundle.mjs): bindings
+    /// still missing the KV namespace id and the secret's value, and the first migration.
+    let metadata: JSONValue
     /// Identifies this build, to tell whether a deployed relay is out of date.
     public let sha256: String
 
@@ -20,15 +20,14 @@ public struct RelayBundle: Sendable {
 
     init(module: Data, manifest: JSONValue) throws {
         guard let main = manifest["main_module"]?.stringValue,
-              let date = manifest["compatibility_date"]?.stringValue,
+              manifest["compatibility_date"]?.stringValue != nil,
+              case .array = manifest["bindings"],
               let sha = manifest["sha256"]?.stringValue
         else { throw DeployError.bundleMissing }
         self.module = module
         mainModule = main
-        compatibilityDate = date
+        metadata = manifest
         sha256 = sha
-        compatibilityFlags = if case .array(let flags)? = manifest["compatibility_flags"] { flags.compactMap(\.stringValue) } else { [] }
-        durableObjectClasses = if case .array(let classes)? = manifest["durable_object_classes"] { classes.compactMap(\.stringValue) } else { [] }
     }
 }
 
@@ -100,30 +99,33 @@ public struct RelayDeployer: Sendable {
         try await api.enableWorkersDev(account: account, script: scriptName)
 
         progress(.live)
-        let url = URL(string: "https://\(scriptName).\(subdomain).workers.dev")!
+        guard let url = URL(string: "https://\(scriptName).\(subdomain).workers.dev") else { throw DeployError.noWorkersSubdomain }
         try await waitUntilLive(url, timeout: liveTimeout)
         return url
     }
 
     func metadata(kvNamespace: String, hostSecret: String, firstDeploy: Bool) -> JSONValue {
+        let manifest = bundle.metadata
+        var bindings: [JSONValue] = []
+        if case .array(let declared)? = manifest["bindings"] {
+            for var binding in declared {
+                switch binding["type"]?.stringValue {
+                case "kv_namespace": binding["namespace_id"] = .string(kvNamespace)
+                case "secret_text": binding["text"] = .string(hostSecret)
+                default: break
+                }
+                bindings.append(binding)
+            }
+        }
         var metadata: [String: JSONValue] = [
             "main_module": .string(bundle.mainModule),
-            "compatibility_date": .string(bundle.compatibilityDate),
-            "compatibility_flags": .array(bundle.compatibilityFlags.map(JSONValue.string)),
-            "bindings": .array([
-                .object(["type": .string("durable_object_namespace"), "name": .string("HUB"), "class_name": .string("Hub")]),
-                .object(["type": .string("kv_namespace"), "name": .string("OAUTH_KV"), "namespace_id": .string(kvNamespace)]),
-                .object(["type": .string("secret_text"), "name": .string("HOST_SECRET"), "text": .string(hostSecret)]),
-            ]),
-            "observability": .object(["enabled": .bool(true)]),
+            "compatibility_date": manifest["compatibility_date"] ?? .null,
+            "compatibility_flags": manifest["compatibility_flags"] ?? .array([]),
+            "bindings": .array(bindings),
+            "observability": manifest["observability"] ?? .object(["enabled": .bool(false)]),
         ]
-        // The relay has one migration so far; it only applies when the script is created.
-        if firstDeploy {
-            metadata["migrations"] = .object([
-                "new_tag": .string("v1"),
-                "new_sqlite_classes": .array(bundle.durableObjectClasses.map(JSONValue.string)),
-            ])
-        }
+        // Migrations only apply when the script is created; updates keep its Durable Objects.
+        if firstDeploy, let migration = manifest["migration"] { metadata["migrations"] = migration }
         return .object(metadata)
     }
 

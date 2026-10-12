@@ -1,6 +1,7 @@
 import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
-import { hub, providerOptions } from "./oauth";
+import { providerOptions } from "./oauth";
 import { PROTOCOL_VERSION } from "./protocol";
+import { hub } from "./stub";
 
 export { Hub } from "./hub";
 

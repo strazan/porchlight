@@ -7,16 +7,13 @@ import {
 } from "@cloudflare/workers-oauth-provider";
 import { errorPage, landingPage, pairingPage } from "./consent";
 import type { PairingInfo } from "./protocol";
+import { hub } from "./stub";
 
 /** Everything is granted by the one person who owns this relay. */
 export const OWNER = "owner";
 
-export function hub(env: Env) {
-	return env.HUB.get(env.HUB.idFromName("default"));
-}
-
 /** Props stored with each grant, available on every request it authorizes. */
-export interface GrantProps {
+interface GrantProps {
 	clientName: string;
 }
 
@@ -52,15 +49,16 @@ async function forwardToHost(
 	ctx: ExecutionContext & { props?: GrantProps; auth?: { clientId?: string; token?: string } },
 ): Promise<Response> {
 	// The Mac decides what each app may use by this id: never forward a request without one.
-	if (!ctx.auth?.clientId) return new Response("Unauthorized", { status: 401 });
+	const clientId = ctx.auth?.clientId;
+	if (!clientId) return new Response("Unauthorized", { status: 401 });
 	const headers = new Headers(request.headers);
 	for (const name of [...headers.keys()]) {
 		if (name.startsWith("porchlight-")) headers.delete(name);
 	}
-	headers.set("porchlight-client-id", encodeURIComponent(ctx.auth?.clientId ?? ""));
+	headers.set("porchlight-client-id", encodeURIComponent(clientId));
 	headers.set("porchlight-client-name", encodeURIComponent(ctx.props?.clientName ?? ""));
 	// For the Hub only (it doesn't reach the host): what this app queues is dropped with its grant.
-	headers.set("porchlight-grant-id", encodeURIComponent(grantIdFromToken(ctx.auth?.token)));
+	headers.set("porchlight-grant-id", encodeURIComponent(grantId(ctx.auth?.token)));
 	return hub(env).fetch(new Request(request, { headers }));
 }
 
@@ -128,7 +126,7 @@ async function submitAuthorize(request: Request, env: Env, origin: string): Prom
 	});
 	// KV listings lag new writes, so tell the hub about this grant directly.
 	await hub(env).clientsChanged({
-		grant_id: grantIdFromRedirect(redirectTo),
+		grant_id: grantId(new URL(redirectTo).searchParams.get("code")),
 		client_id: pairing.client_id,
 		client_name: pairing.client_name,
 		client_domain: pairing.client_domain,
@@ -142,7 +140,7 @@ async function submitAuthorize(request: Request, env: Env, origin: string): Prom
  * Apps name themselves when they register. Keep names to one plain line, so one can't fake
  * a second line ("Published by…") or reorder text with direction overrides on the Mac.
  */
-export function cleanName(name: string): string {
+function cleanName(name: string): string {
 	const plain = name
 		.replace(/\p{Cf}/gu, "")
 		.replace(/[\p{Cc}\u2028\u2029]/gu, " ")
@@ -151,15 +149,9 @@ export function cleanName(name: string): string {
 	return [...plain].slice(0, 80).join("") || "Unnamed app";
 }
 
-/** Access tokens are `userId:grantId:secret`, like codes; "" if that ever changes. */
-function grantIdFromToken(token: string | undefined): string {
-	const parts = token?.split(":") ?? [];
-	return parts.length === 3 ? parts[1]! : "";
-}
-
-/** Authorization codes are `userId:grantId:secret`; "" if that ever changes. */
-function grantIdFromRedirect(redirectTo: string): string {
-	const parts = new URL(redirectTo).searchParams.get("code")?.split(":") ?? [];
+/** Access tokens and authorization codes are `userId:grantId:secret`; "" if that ever changes. */
+function grantId(credential: string | null | undefined): string {
+	const parts = credential?.split(":") ?? [];
 	return parts.length === 3 ? parts[1]! : "";
 }
 

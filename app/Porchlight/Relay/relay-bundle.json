@@ -4,8 +4,29 @@
   "compatibility_flags": [
     "global_fetch_strictly_public"
   ],
-  "durable_object_classes": [
-    "Hub"
+  "bindings": [
+    {
+      "type": "durable_object_namespace",
+      "name": "HUB",
+      "class_name": "Hub"
+    },
+    {
+      "type": "kv_namespace",
+      "name": "OAUTH_KV"
+    },
+    {
+      "type": "secret_text",
+      "name": "HOST_SECRET"
+    }
   ],
-  "sha256": "538efe3ba0c8add3454fdbeaba64d7161597fa6b5d54818ad25d21e2f8a7fdd9"
+  "migration": {
+    "new_tag": "v1",
+    "new_sqlite_classes": [
+      "Hub"
+    ]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "sha256": "1982a2c9565b15359d7c02976c32550d1de7bafa65e7bd1a7af2ab7cb87708c5"
 }

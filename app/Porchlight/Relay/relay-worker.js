@@ -2252,9 +2252,9 @@ var OAuthProviderImpl = class {
   async unwrapToken(token, env) {
     const parts = token.split(":");
     if (!(parts.length === 3)) return null;
-    const [userId, grantId] = parts;
+    const [userId, grantId2] = parts;
     const id = await generateTokenId(token);
-    const tokenData = await env.OAUTH_KV.get(`token:${userId}:${grantId}:${id}`, { type: "json" });
+    const tokenData = await env.OAUTH_KV.get(`token:${userId}:${grantId2}:${id}`, { type: "json" });
     if (!tokenData) return null;
     const now = Math.floor(Date.now() / 1e3);
     if (tokenData.expiresAt < now) return null;
@@ -2795,8 +2795,8 @@ var OAuthProviderImpl = class {
       category: "authorization-code-grant",
       reason: "code_malformed"
     });
-    const [userId, grantId, _] = codeParts;
-    const grantKey = `grant:${userId}:${grantId}`;
+    const [userId, grantId2, _] = codeParts;
+    const grantKey = `grant:${userId}:${grantId2}`;
     const grantData = await env.OAUTH_KV.get(grantKey, { type: "json" });
     if (!grantData) return this.createErrorResponse("invalid_grant", { description: "Grant not found or authorization code expired" }, {
       category: "authorization-code-grant",
@@ -2813,7 +2813,7 @@ var OAuthProviderImpl = class {
     });
     if (!grantData.authCodeWrappedKey) {
       try {
-        await this.createOAuthHelpers(env).revokeGrant(grantId, userId);
+        await this.createOAuthHelpers(env).revokeGrant(grantId2, userId);
       } catch {
       }
       return this.createErrorResponse("invalid_grant", { description: "Authorization code already used" }, {
@@ -2881,7 +2881,7 @@ var OAuthProviderImpl = class {
         clientId: clientInfo.clientId,
         subjectClientId: grantData.clientId,
         userId,
-        grantId,
+        grantId: grantId2,
         scope: grantData.scope,
         requestedScope: tokenScopes,
         resource: audience,
@@ -2927,7 +2927,7 @@ var OAuthProviderImpl = class {
     delete grantData.authCodeWrappedKey;
     let refreshToken;
     if (useRefreshToken) {
-      refreshToken = `${userId}:${grantId}:${generateRandomString(TOKEN_LENGTH)}`;
+      refreshToken = `${userId}:${grantId2}:${generateRandomString(TOKEN_LENGTH)}`;
       const refreshTokenId = await generateTokenId(refreshToken);
       const refreshTokenWrappedKey = await wrapKeyWithToken(refreshToken, grantEncryptionKey);
       const expiresAt = refreshTokenTTL !== void 0 ? now + refreshTokenTTL : void 0;
@@ -2942,7 +2942,7 @@ var OAuthProviderImpl = class {
     const tokenResponse = {
       access_token: await this.createAccessToken({
         userId,
-        grantId,
+        grantId: grantId2,
         clientId: grantData.clientId,
         scope: tokenScopes,
         encryptedProps: encryptedAccessTokenProps,
@@ -2981,9 +2981,9 @@ var OAuthProviderImpl = class {
       category: "refresh-token-grant",
       reason: "refresh_token_malformed"
     });
-    const [userId, grantId, _] = tokenParts;
+    const [userId, grantId2, _] = tokenParts;
     const providedTokenHash = await generateTokenId(refreshToken);
-    const grantKey = `grant:${userId}:${grantId}`;
+    const grantKey = `grant:${userId}:${grantId2}`;
     const grantData = await env.OAUTH_KV.get(grantKey, { type: "json" });
     if (!grantData) return this.createErrorResponse("invalid_grant", { description: "Grant not found" }, {
       category: "refresh-token-grant",
@@ -3008,7 +3008,7 @@ var OAuthProviderImpl = class {
     }
     const resourceResolution = this.resolveTokenResource(body.resource, grantData);
     const audience = resourceResolution.audience;
-    const newAccessToken = `${userId}:${grantId}:${generateRandomString(TOKEN_LENGTH)}`;
+    const newAccessToken = `${userId}:${grantId2}:${generateRandomString(TOKEN_LENGTH)}`;
     const accessTokenId = await generateTokenId(newAccessToken);
     let accessTokenTTL = this.options.accessTokenTTL;
     let refreshTokenIdleTTL = this.options.refreshTokenIdleTTL;
@@ -3034,7 +3034,7 @@ var OAuthProviderImpl = class {
         clientId: clientInfo.clientId,
         subjectClientId: grantData.clientId,
         userId,
-        grantId,
+        grantId: grantId2,
         scope: grantData.scope,
         requestedScope: tokenScopes,
         resource: audience,
@@ -3091,7 +3091,7 @@ var OAuthProviderImpl = class {
     });
     const accessTokenExpiresAt = now + accessTokenTTL;
     const accessTokenWrappedKey = await wrapKeyWithToken(newAccessToken, accessTokenEncryptionKey);
-    const newRefreshToken = `${userId}:${grantId}:${generateRandomString(TOKEN_LENGTH)}`;
+    const newRefreshToken = `${userId}:${grantId2}:${generateRandomString(TOKEN_LENGTH)}`;
     const newRefreshTokenId = await generateTokenId(newRefreshToken);
     const newRefreshTokenWrappedKey = await wrapKeyWithToken(newRefreshToken, grantEncryptionKey);
     grantData.previousRefreshTokenId = providedTokenHash;
@@ -3102,7 +3102,7 @@ var OAuthProviderImpl = class {
     await this.saveGrantWithTTL(env, grantKey, grantData, now);
     const accessTokenData = {
       id: accessTokenId,
-      grantId,
+      grantId: grantId2,
       userId,
       createdAt: now,
       expiresAt: accessTokenExpiresAt,
@@ -3116,7 +3116,7 @@ var OAuthProviderImpl = class {
       }
     };
     try {
-      await env.OAUTH_KV.put(`token:${userId}:${grantId}:${accessTokenId}`, JSON.stringify(accessTokenData), { expirationTtl: accessTokenTTL });
+      await env.OAUTH_KV.put(`token:${userId}:${grantId2}:${accessTokenId}`, JSON.stringify(accessTokenData), { expirationTtl: accessTokenTTL });
     } catch (error) {
       this.throwRetryableTokenStorageErrorIfKvRateLimited(error);
       throw error;
@@ -3508,10 +3508,10 @@ var OAuthProviderImpl = class {
   */
   async issueEmaAccessToken(args) {
     const tokenScopes = args.assertionScopes.length > 0 ? this.downscope(args.mapperScope, args.assertionScopes) : args.mapperScope;
-    const grantId = generateRandomString(16);
+    const grantId2 = generateRandomString(16);
     const { encryptedData, key: encryptionKey } = await encryptProps(args.mapperProps);
     const grant = {
-      id: grantId,
+      id: grantId2,
       clientId: args.clientId,
       userId: args.userId,
       scope: tokenScopes,
@@ -3521,11 +3521,11 @@ var OAuthProviderImpl = class {
       expiresAt: args.now + args.accessTokenTTLSeconds,
       resource: args.resource
     };
-    await this.saveGrantWithTTL(args.env, `grant:${args.userId}:${grantId}`, grant, args.now);
+    await this.saveGrantWithTTL(args.env, `grant:${args.userId}:${grantId2}`, grant, args.now);
     return {
       access_token: await this.createAccessToken({
         userId: args.userId,
-        grantId,
+        grantId: grantId2,
         clientId: args.clientId,
         scope: tokenScopes,
         encryptedProps: encryptedData,
@@ -3559,35 +3559,35 @@ var OAuthProviderImpl = class {
     });
     const tokenParts = token.split(":");
     if (tokenParts.length !== 3) return new Response("", { status: 200 });
-    const [userId, grantId, _] = tokenParts;
+    const [userId, grantId2, _] = tokenParts;
     const tokenId = await generateTokenId(token);
     if (tokenTypeHint === "refresh_token") {
-      if (await this.revokeRefreshIfOwned(tokenId, userId, grantId, clientInfo, env)) return new Response("", { status: 200 });
-      if (await this.revokeAccessIfOwned(tokenId, userId, grantId, clientInfo, env)) return new Response("", { status: 200 });
+      if (await this.revokeRefreshIfOwned(tokenId, userId, grantId2, clientInfo, env)) return new Response("", { status: 200 });
+      if (await this.revokeAccessIfOwned(tokenId, userId, grantId2, clientInfo, env)) return new Response("", { status: 200 });
     } else {
-      if (await this.revokeAccessIfOwned(tokenId, userId, grantId, clientInfo, env)) return new Response("", { status: 200 });
-      if (await this.revokeRefreshIfOwned(tokenId, userId, grantId, clientInfo, env)) return new Response("", { status: 200 });
+      if (await this.revokeAccessIfOwned(tokenId, userId, grantId2, clientInfo, env)) return new Response("", { status: 200 });
+      if (await this.revokeRefreshIfOwned(tokenId, userId, grantId2, clientInfo, env)) return new Response("", { status: 200 });
     }
     return new Response("", { status: 200 });
   }
   /** Revoke an access token if it exists and belongs to the requesting client. */
-  async revokeAccessIfOwned(tokenId, userId, grantId, clientInfo, env) {
-    const tokenData = await env.OAUTH_KV.get(`token:${userId}:${grantId}:${tokenId}`, { type: "json" });
+  async revokeAccessIfOwned(tokenId, userId, grantId2, clientInfo, env) {
+    const tokenData = await env.OAUTH_KV.get(`token:${userId}:${grantId2}:${tokenId}`, { type: "json" });
     if (!tokenData) return false;
     const tokenClientId = tokenData.grant?.clientId;
     if (tokenClientId !== void 0) {
       if (tokenClientId !== clientInfo.clientId) return false;
-    } else if ((await env.OAUTH_KV.get(`grant:${userId}:${grantId}`, { type: "json" }))?.clientId !== clientInfo.clientId) return false;
-    await this.revokeSpecificAccessToken(tokenId, userId, grantId, env);
+    } else if ((await env.OAUTH_KV.get(`grant:${userId}:${grantId2}`, { type: "json" }))?.clientId !== clientInfo.clientId) return false;
+    await this.revokeSpecificAccessToken(tokenId, userId, grantId2, env);
     return true;
   }
   /** Revoke a refresh token (and its grant) if it exists and belongs to the requesting client. */
-  async revokeRefreshIfOwned(tokenId, userId, grantId, clientInfo, env) {
-    const grantData = await env.OAUTH_KV.get(`grant:${userId}:${grantId}`, { type: "json" });
+  async revokeRefreshIfOwned(tokenId, userId, grantId2, clientInfo, env) {
+    const grantData = await env.OAUTH_KV.get(`grant:${userId}:${grantId2}`, { type: "json" });
     if (!grantData) return false;
     if (!(grantData.refreshTokenId === tokenId || grantData.previousRefreshTokenId === tokenId)) return false;
     if (grantData.clientId !== clientInfo.clientId) return false;
-    await this.createOAuthHelpers(env).revokeGrant(grantId, userId);
+    await this.createOAuthHelpers(env).revokeGrant(grantId2, userId);
     return true;
   }
   /**
@@ -3597,8 +3597,8 @@ var OAuthProviderImpl = class {
   * @param grantId - The grant ID extracted from the token
   * @param env - Cloudflare Worker environment variables
   */
-  async revokeSpecificAccessToken(tokenId, userId, grantId, env) {
-    const tokenKey = `token:${userId}:${grantId}:${tokenId}`;
+  async revokeSpecificAccessToken(tokenId, userId, grantId2, env) {
+    const tokenKey = `token:${userId}:${grantId2}:${tokenId}`;
     await env.OAUTH_KV.delete(tokenKey);
   }
   /**
@@ -3787,11 +3787,11 @@ var OAuthProviderImpl = class {
     const isPossiblyInternalFormat = parts.length === 3;
     let tokenData = null;
     let userId = "";
-    let grantId = "";
+    let grantId2 = "";
     if (isPossiblyInternalFormat) {
-      [userId, grantId] = parts;
+      [userId, grantId2] = parts;
       const id = await generateTokenId(accessToken);
-      tokenData = await env.OAUTH_KV.get(`token:${userId}:${grantId}:${id}`, { type: "json" });
+      tokenData = await env.OAUTH_KV.get(`token:${userId}:${grantId2}:${id}`, { type: "json" });
     }
     if (!tokenData && (!externalTokenResolver || isIssuedTokenFormat(accessToken))) return this.createErrorResponse("invalid_token", {
       description: "Invalid access token",
@@ -4177,7 +4177,7 @@ var OAuthProviderImpl = class {
   * @returns The access token string
   */
   async createAccessToken(params) {
-    const { userId, grantId, clientId, scope, encryptedProps, encryptionKey, expiresIn, audience, env } = params;
+    const { userId, grantId: grantId2, clientId, scope, encryptedProps, encryptionKey, expiresIn, audience, env } = params;
     if (!isValidAccessTokenTTL(expiresIn)) throw new OAuthError("invalid_request", {
       description: "Requested token lifetime must be at least 60 seconds",
       internal: {
@@ -4185,12 +4185,12 @@ var OAuthProviderImpl = class {
         reason: "requested_ttl_too_short"
       }
     });
-    const accessToken = `${userId}:${grantId}:${generateRandomString(TOKEN_LENGTH)}`;
+    const accessToken = `${userId}:${grantId2}:${generateRandomString(TOKEN_LENGTH)}`;
     const now = Math.floor(Date.now() / 1e3);
     const accessTokenId = await generateTokenId(accessToken);
     const accessTokenData = {
       id: accessTokenId,
-      grantId,
+      grantId: grantId2,
       userId,
       createdAt: now,
       expiresAt: now + expiresIn,
@@ -4204,7 +4204,7 @@ var OAuthProviderImpl = class {
       }
     };
     try {
-      await env.OAUTH_KV.put(`token:${userId}:${grantId}:${accessTokenId}`, JSON.stringify(accessTokenData), { expirationTtl: expiresIn });
+      await env.OAUTH_KV.put(`token:${userId}:${grantId2}:${accessTokenId}`, JSON.stringify(accessTokenData), { expirationTtl: expiresIn });
     } catch (error) {
       this.throwRetryableTokenStorageErrorIfKvRateLimited(error);
       throw error;
@@ -4273,16 +4273,16 @@ var OAuthProviderImpl = class {
   */
   createErrorResponse(code, options, internal, request) {
     const { description } = options;
-    const responseStatus = options.statusCode ?? 400;
-    const responseHeaders = {
+    const responseStatus2 = options.statusCode ?? 400;
+    const responseHeaders2 = {
       ...NO_CACHE_HEADERS,
       ...options.headers ?? {}
     };
     const customErrorResponse = this.options.onError?.({
       code,
       description,
-      status: responseStatus,
-      headers: responseHeaders,
+      status: responseStatus2,
+      headers: responseHeaders2,
       internal,
       ...request ? { request } : {}
     });
@@ -4291,10 +4291,10 @@ var OAuthProviderImpl = class {
       error_description: description
     });
     const response = customErrorResponse ?? new Response(body, {
-      status: responseStatus,
+      status: responseStatus2,
       headers: {
         "Content-Type": "application/json",
-        ...responseHeaders
+        ...responseHeaders2
       }
     });
     this.errorResponses.add(response);
@@ -4514,8 +4514,8 @@ function isIssuedTokenFormat(token) {
   const parts = token.split(":");
   if (parts.length < 3) return false;
   const secret = parts[parts.length - 1];
-  const grantId = parts[parts.length - 2];
-  return parts.slice(0, -2).join(":").length > 0 && ISSUED_GRANT_ID_PATTERN.test(grantId) && ISSUED_TOKEN_SECRET_PATTERN.test(secret);
+  const grantId2 = parts[parts.length - 2];
+  return parts.slice(0, -2).join(":").length > 0 && ISSUED_GRANT_ID_PATTERN.test(grantId2) && ISSUED_TOKEN_SECRET_PATTERN.test(secret);
 }
 __name(isIssuedTokenFormat, "isIssuedTokenFormat");
 function generateRandomString(length) {
@@ -4769,15 +4769,15 @@ var OAuthHelpersImpl = class {
       const readConcurrency = DEFAULT_REVOKE_EXISTING_GRANTS_BATCH_SIZE;
       grantsToRevoke = await this.findGrantIds(options.userId, (grant$1) => grant$1.clientId === clientId && (!isCimdClient || grant$1.redirectUri === options.request.redirectUri) && this.provider.shouldReplaceGrantForResource(grant$1.resource, effectiveResource), readConcurrency);
     }
-    const grantId = generateRandomString(16);
+    const grantId2 = generateRandomString(16);
     const { encryptedData, key: encryptionKey } = await encryptProps(options.props);
     const now = Math.floor(Date.now() / 1e3);
     const authCodeSecret = generateRandomString(32);
-    const authCode = `${options.userId}:${grantId}:${authCodeSecret}`;
+    const authCode = `${options.userId}:${grantId2}:${authCodeSecret}`;
     const authCodeId = await hashSecret(authCode);
     const authCodeWrappedKey = await wrapKeyWithToken(authCode, encryptionKey);
     const grant = {
-      id: grantId,
+      id: grantId2,
       clientId: options.request.clientId,
       userId: options.userId,
       scope: options.scope,
@@ -4791,7 +4791,7 @@ var OAuthHelpersImpl = class {
       resource: effectiveResource,
       redirectUri: options.request.redirectUri
     };
-    const grantKey = `grant:${options.userId}:${grantId}`;
+    const grantKey = `grant:${options.userId}:${grantId2}`;
     await this.env.OAUTH_KV.put(grantKey, JSON.stringify(grant), grantPutOptions(grant, { expirationTtl: 600 }));
     const redirectUrl = new URL(options.request.redirectUri);
     redirectUrl.searchParams.set("code", authCode);
@@ -4854,9 +4854,9 @@ var OAuthHelpersImpl = class {
           const grant = grants[index];
           return grant !== null && matches(grant);
         });
-        if (read.length > 0) yield read.map(({ userId: userId$1, grantId }) => ({
+        if (read.length > 0) yield read.map(({ userId: userId$1, grantId: grantId2 }) => ({
           userId: userId$1,
-          grantId
+          grantId: grantId2
         }));
       }
       cursor = page2.list_complete ? void 0 : page2.cursor;
@@ -4983,7 +4983,7 @@ var OAuthHelpersImpl = class {
   async deleteClient(clientId) {
     await this.env.OAUTH_KV.delete(`client:${clientId}`);
     const grants = this.findGrants(void 0, (grant) => grant.clientId === clientId, DEFAULT_REVOKE_EXISTING_GRANTS_BATCH_SIZE);
-    for await (const found of grants) for (const { userId, grantId } of found) await this.revokeGrant(grantId, userId);
+    for await (const found of grants) for (const { userId, grantId: grantId2 } of found) await this.revokeGrant(grantId2, userId);
   }
   /**
   * Lists all authorization grants for a specific user with pagination support
@@ -5066,9 +5066,9 @@ var OAuthHelpersImpl = class {
   finishUpstream(request) {
     return finishUpstream(this.env.OAUTH_KV, this.provider.consentCookies, request);
   }
-  async revokeGrant(grantId, userId) {
-    const grantKey = `grant:${userId}:${grantId}`;
-    const tokenPrefix = `token:${userId}:${grantId}:`;
+  async revokeGrant(grantId2, userId) {
+    const grantKey = `grant:${userId}:${grantId2}`;
+    const tokenPrefix = `token:${userId}:${grantId2}:`;
     let cursor;
     let allTokensDeleted = false;
     while (!allTokensDeleted) {
@@ -5203,7 +5203,7 @@ var OAuthHelpersImpl = class {
 // src/consent.ts
 var escape = /* @__PURE__ */ __name((value) => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`), "escape");
 var style = `
-:root { color-scheme: light dark; --fg: #1d1d1f; --muted: #6e6e73; --bg: #f5f5f7; --card: #fff; --accent: #e8a33d; --warn: #b25000; }
+:root { color-scheme: light dark; --fg: #1d1d1f; --muted: #6e6e73; --bg: #f5f5f7; --card: #fff; --warn: #b25000; }
 @media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --muted: #a1a1a6; --bg: #1d1d1f; --card: #2c2c2e; --warn: #ffb35c; } }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
@@ -5322,12 +5322,14 @@ function landingPage(origin) {
 }
 __name(landingPage, "landingPage");
 
-// src/oauth.ts
-var OWNER = "owner";
+// src/stub.ts
 function hub(env) {
   return env.HUB.get(env.HUB.idFromName("default"));
 }
 __name(hub, "hub");
+
+// src/oauth.ts
+var OWNER = "owner";
 function providerOptions(origin) {
   return {
     apiRoute: "/mcp",
@@ -5350,14 +5352,15 @@ function oauthApi(origin, env) {
 }
 __name(oauthApi, "oauthApi");
 async function forwardToHost(request, env, ctx) {
-  if (!ctx.auth?.clientId) return new Response("Unauthorized", { status: 401 });
+  const clientId = ctx.auth?.clientId;
+  if (!clientId) return new Response("Unauthorized", { status: 401 });
   const headers = new Headers(request.headers);
   for (const name of [...headers.keys()]) {
     if (name.startsWith("porchlight-")) headers.delete(name);
   }
-  headers.set("porchlight-client-id", encodeURIComponent(ctx.auth?.clientId ?? ""));
+  headers.set("porchlight-client-id", encodeURIComponent(clientId));
   headers.set("porchlight-client-name", encodeURIComponent(ctx.props?.clientName ?? ""));
-  headers.set("porchlight-grant-id", encodeURIComponent(grantIdFromToken(ctx.auth?.token)));
+  headers.set("porchlight-grant-id", encodeURIComponent(grantId(ctx.auth?.token)));
   return hub(env).fetch(new Request(request, { headers }));
 }
 __name(forwardToHost, "forwardToHost");
@@ -5420,7 +5423,7 @@ async function submitAuthorize(request, env, origin) {
     revokeExistingGrants: false
   });
   await hub(env).clientsChanged({
-    grant_id: grantIdFromRedirect(redirectTo),
+    grant_id: grantId(new URL(redirectTo).searchParams.get("code")),
     client_id: pairing.client_id,
     client_name: pairing.client_name,
     client_domain: pairing.client_domain,
@@ -5435,16 +5438,11 @@ function cleanName(name) {
   return [...plain].slice(0, 80).join("") || "Unnamed app";
 }
 __name(cleanName, "cleanName");
-function grantIdFromToken(token) {
-  const parts = token?.split(":") ?? [];
+function grantId(credential) {
+  const parts = credential?.split(":") ?? [];
   return parts.length === 3 ? parts[1] : "";
 }
-__name(grantIdFromToken, "grantIdFromToken");
-function grantIdFromRedirect(redirectTo) {
-  const parts = new URL(redirectTo).searchParams.get("code")?.split(":") ?? [];
-  return parts.length === 3 ? parts[1] : "";
-}
-__name(grantIdFromRedirect, "grantIdFromRedirect");
+__name(grantId, "grantId");
 function html(body, status = 200) {
   return new Response(body, {
     status,
@@ -5464,14 +5462,14 @@ var PING = '{"type":"ping"}';
 var PONG = '{"type":"pong"}';
 function parseHostFrame(raw) {
   if (typeof raw !== "string") return null;
-  let msg;
+  let parsed;
   try {
-    msg = JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch {
     return null;
   }
-  if (typeof msg !== "object" || msg === null) return null;
-  const m = msg;
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const m = parsed;
   switch (m.type) {
     case "hello":
       return typeof m.proto === "number" ? m : null;
@@ -5506,26 +5504,88 @@ function isCatalog(value) {
   });
 }
 __name(isCatalog, "isCatalog");
-function toBase64(bytes) {
-  let bin = "";
-  for (let i = 0; i < bytes.length; i += 32768) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + 32768));
-  }
-  return btoa(bin);
-}
-__name(toBase64, "toBase64");
-function fromBase64(b64) {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-__name(fromBase64, "fromBase64");
 
 // src/hub.ts
 import { DurableObject } from "cloudflare:workers";
 
+// src/clients.ts
+var KV_LAG_MS = 5 * 6e4;
+var REVOKED_KEEP_MS = 2 * 36e5;
+var RECENT = "recent:";
+var REVOKED = "revoked:";
+var Clients = class {
+  constructor(storage, oauth) {
+    this.storage = storage;
+    this.oauth = oauth;
+  }
+  storage;
+  oauth;
+  static {
+    __name(this, "Clients");
+  }
+  /** A grant just issued: KV lists can take a minute to include it, so it's remembered here until they do. */
+  async remember(added) {
+    await this.storage.put(RECENT + (added.grant_id || added.client_id), { ...added, recorded: Date.now() });
+  }
+  async list() {
+    const oauth = await this.oauth();
+    if (!oauth) return null;
+    const items = [];
+    const now = Date.now();
+    const revoked = /* @__PURE__ */ new Set();
+    for (const [key, at] of await this.storage.list({ prefix: REVOKED })) {
+      if (now - at < REVOKED_KEEP_MS) revoked.add(key.slice(REVOKED.length));
+      else await this.storage.delete(key);
+    }
+    let cursor;
+    do {
+      const page2 = await oauth.listUserGrants(OWNER, { cursor });
+      for (const grant of page2.items) {
+        if (revoked.has(grant.id)) continue;
+        items.push({
+          grant_id: grant.id,
+          client_id: grant.clientId,
+          client_name: grant.metadata?.client_name ?? grant.clientId,
+          client_domain: grant.metadata?.client_domain,
+          created_at: grant.createdAt
+        });
+      }
+      cursor = page2.cursor;
+    } while (cursor);
+    for (const [key, recent] of await this.storage.list({ prefix: RECENT })) {
+      const listed = items.some(
+        (item) => recent.grant_id ? item.grant_id === recent.grant_id : item.client_id === recent.client_id
+      );
+      if (listed || revoked.has(recent.grant_id) || now - recent.recorded >= KV_LAG_MS) {
+        await this.storage.delete(key);
+      } else {
+        const { recorded: _, ...summary } = recent;
+        items.push(summary);
+      }
+    }
+    return items;
+  }
+  async revoke(grantId2) {
+    await this.storage.put(REVOKED + grantId2, Date.now());
+    await (await this.oauth())?.revokeGrant(grantId2, OWNER);
+  }
+  async isRevoked(grantId2) {
+    return grantId2 !== "" && await this.storage.get(REVOKED + grantId2) !== void 0;
+  }
+};
+
 // src/offline.ts
+var OFFLINE = "The Mac running Porchlight is offline";
+function hostOffline(body) {
+  let id = null;
+  try {
+    const message = JSON.parse(new TextDecoder().decode(body));
+    if (message && typeof message === "object" && "id" in message) id = message.id;
+  } catch {
+  }
+  return Response.json(rpcError(id, -32001, OFFLINE), { status: 503 });
+}
+__name(hostOffline, "hostOffline");
 async function answerOffline(method, path, body, catalog, enqueue) {
   const entry = catalog.paths[path.replace(/\/+$/, "")];
   if (!entry) return null;
@@ -5584,7 +5644,7 @@ async function answer(raw, entry, catalog, enqueue) {
       );
     }
     default:
-      return rpcError(id, -32001, "The Mac running Porchlight is offline");
+      return rpcError(id, -32001, OFFLINE);
   }
 }
 __name(answer, "answer");
@@ -5600,6 +5660,99 @@ function rpcError(id, code, message) {
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 __name(rpcError, "rpcError");
+
+// src/pairing.ts
+var PAIRING_TTL_MS = 10 * 6e4;
+var MAX_PAIRINGS = 5;
+var PREFIX = "pair:";
+var Pairings = class {
+  constructor(storage) {
+    this.storage = storage;
+  }
+  storage;
+  static {
+    __name(this, "Pairings");
+  }
+  /** Null when too many are already waiting. */
+  async start(info, handleHash) {
+    const now = Date.now();
+    const waiting = [...(await this.storage.list({ prefix: PREFIX })).values()];
+    if (waiting.filter((record2) => record2.expiresAt > now).length >= MAX_PAIRINGS) return null;
+    const id = crypto.randomUUID();
+    const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1e6).padStart(6, "0");
+    const record = { ...info, code, handleHash, state: "pending", expiresAt: now + PAIRING_TTL_MS };
+    await this.storage.put(PREFIX + id, record);
+    return { frame: pairRequest(id, record), expiresAt: record.expiresAt };
+  }
+  /** The `pair_request` frames for pairings still waiting, to send to a host that just connected. */
+  async pending() {
+    const frames = [];
+    for (const [key, record] of await this.storage.list({ prefix: PREFIX })) {
+      if (record.state === "pending" && record.expiresAt > Date.now()) frames.push(pairRequest(key.slice(PREFIX.length), record));
+    }
+    return frames;
+  }
+  async state(id) {
+    const record = await this.storage.get(PREFIX + id);
+    return !record || record.expiresAt <= Date.now() ? "expired" : record.state;
+  }
+  async decide(id, allow) {
+    const record = await this.storage.get(PREFIX + id);
+    if (!record || record.state !== "pending") return;
+    await this.storage.put(PREFIX + id, { ...record, state: allow ? "approved" : "denied" });
+  }
+  /** Completes an approved pairing, once, for the consent page it was started from. */
+  async consume(id, handleHash) {
+    const record = await this.storage.get(PREFIX + id);
+    if (!record || record.state !== "approved" || record.handleHash !== handleHash || record.expiresAt <= Date.now()) {
+      return null;
+    }
+    await this.storage.delete(PREFIX + id);
+    const { client_id, client_name, client_domain, redirect_host, loopback } = record;
+    return { client_id, client_name, client_domain, redirect_host, loopback };
+  }
+  /** Deletes expired pairings; returns when the next one expires, if any are left. */
+  async expire(now) {
+    let next;
+    for (const [key, record] of await this.storage.list({ prefix: PREFIX })) {
+      if (record.expiresAt <= now) await this.storage.delete(key);
+      else next = Math.min(next ?? record.expiresAt, record.expiresAt);
+    }
+    return next;
+  }
+};
+function pairRequest(id, record) {
+  const { code, client_id, client_name, client_domain, redirect_host, loopback } = record;
+  return { type: "pair_request", id, code, client_id, client_name, client_domain, redirect_host, loopback };
+}
+__name(pairRequest, "pairRequest");
+
+// src/bytes.ts
+function toBase64(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 32768) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 32768));
+  }
+  return btoa(bin);
+}
+__name(toBase64, "toBase64");
+function fromBase64(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+__name(fromBase64, "fromBase64");
+function concat(...parts) {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+__name(concat, "concat");
 
 // src/seal.ts
 var INFO = new TextEncoder().encode("porchlight-queue-v1");
@@ -5631,27 +5784,93 @@ async function aesKey(privateKey, publicKey, usages) {
   );
 }
 __name(aesKey, "aesKey");
-function concat(...parts) {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
-}
-__name(concat, "concat");
 
-// src/hub.ts
-var START_TIMEOUT_MS = 6e4;
-var PAIRING_TTL_MS = 10 * 6e4;
-var KV_LAG_MS = 5 * 6e4;
-var REVOKED_KEEP_MS = 2 * 36e5;
-var MAX_PAIRINGS = 5;
-var MAX_REQUEST_BODY = 8 * 1024 * 1024;
+// src/queue.ts
 var QUEUE_TTL_MS = 7 * 24 * 36e5;
 var MAX_QUEUED = 100;
 var MAX_QUEUED_BODY = 256 * 1024;
+var KEY = "queuekey";
+var CATALOG = "catalog:";
+var ITEM = "queue:";
+var INDEX = "queueid:";
+var OfflineQueue = class {
+  constructor(storage) {
+    this.storage = storage;
+  }
+  storage;
+  static {
+    __name(this, "OfflineQueue");
+  }
+  /** The host's public key (base64, uncompressed P-256 point). Hosts without one get no queue. */
+  async setKey(key) {
+    if (decodesTo(key, 65)) await this.storage.put(KEY, key);
+  }
+  async catalog(clientId) {
+    return clientId ? this.storage.get(CATALOG + clientId) : void 0;
+  }
+  async setCatalog(clientId, catalog) {
+    if (catalog) await this.storage.put(CATALOG + clientId, catalog);
+    else await this.storage.delete(CATALOG + clientId);
+  }
+  /** Seals and saves one JSON-RPC message; null if it can't be saved (no key, too big, full). */
+  async add(message, path, sender) {
+    const key = await this.storage.get(KEY);
+    if (!key) return null;
+    const plaintext = new TextEncoder().encode(JSON.stringify(message));
+    if (plaintext.length > MAX_QUEUED_BODY) return null;
+    if ((await this.storage.list({ prefix: INDEX, limit: MAX_QUEUED })).size >= MAX_QUEUED) return null;
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    const frame = {
+      id,
+      client_id: sender.clientId,
+      client_name: sender.clientName,
+      path,
+      queued_at: now,
+      sealed: toBase64(await seal(fromBase64(key), plaintext, id))
+    };
+    const itemKey = `${ITEM}${String(now).padStart(13, "0")}-${id}`;
+    await this.storage.put({ [itemKey]: { frame, grantId: sender.grantId }, [INDEX + id]: itemKey });
+    return frame;
+  }
+  /** Saved requests that haven't expired, oldest first. */
+  async waiting() {
+    const now = Date.now();
+    return [...(await this.storage.list({ prefix: ITEM })).values()].filter((item) => item.frame.queued_at + QUEUE_TTL_MS > now).map((item) => item.frame);
+  }
+  /** The host ran (or gave up on) a request. Repeats are harmless. */
+  async done(id) {
+    const itemKey = await this.storage.get(INDEX + id);
+    if (itemKey) await this.storage.delete([itemKey, INDEX + id]);
+  }
+  async dropGrant(grantId2) {
+    for (const [key, item] of await this.storage.list({ prefix: ITEM })) {
+      if (item.grantId === grantId2) await this.storage.delete([key, INDEX + item.frame.id]);
+    }
+  }
+  /** Deletes expired requests; returns when the next one expires, if any are left. */
+  async expire(now) {
+    let next;
+    for (const [key, item] of await this.storage.list({ prefix: ITEM })) {
+      const expires = item.frame.queued_at + QUEUE_TTL_MS;
+      if (expires <= now) await this.storage.delete([key, INDEX + item.frame.id]);
+      else next = Math.min(next ?? expires, expires);
+    }
+    return next;
+  }
+};
+function decodesTo(b64, length) {
+  try {
+    return fromBase64(b64).length === length;
+  } catch {
+    return false;
+  }
+}
+__name(decodesTo, "decodesTo");
+
+// src/tunnel.ts
+var MAX_REQUEST_BODY = 8 * 1024 * 1024;
+var START_TIMEOUT_MS = 6e4;
 var STRIP_REQUEST = /* @__PURE__ */ new Set([
   "authorization",
   "connection",
@@ -5668,232 +5887,13 @@ var STRIP_REQUEST = /* @__PURE__ */ new Set([
 ]);
 var STRIP_RESPONSE = /* @__PURE__ */ new Set(["connection", "content-length", "keep-alive", "transfer-encoding", "upgrade"]);
 var NULL_BODY_STATUS = /* @__PURE__ */ new Set([101, 204, 205, 304]);
-var Hub = class extends DurableObject {
+var Tunnel = class {
   static {
-    __name(this, "Hub");
+    __name(this, "Tunnel");
   }
-  // In-memory only: a request in flight keeps the object awake, so nothing here
-  // needs to survive hibernation.
   pending = /* @__PURE__ */ new Map();
-  constructor(ctx, env) {
-    super(ctx, env);
-    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
-  }
-  async fetch(request) {
-    const url = new URL(request.url);
-    if (url.pathname === "/host") return this.acceptHost(url.origin);
-    return this.forward(request);
-  }
-  async acceptHost(origin) {
-    for (const old of this.ctx.getWebSockets()) old.close(4e3, "replaced");
-    await this.ctx.storage.put("origin", origin);
-    const { 0: client, 1: server } = new WebSocketPair();
-    this.ctx.acceptWebSocket(server);
-    for (const [key, record] of await this.ctx.storage.list({ prefix: "pair:" })) {
-      if (record.state === "pending" && record.expiresAt > Date.now()) {
-        this.sendPairRequest(server, key.slice("pair:".length), record);
-      }
-    }
-    for (const item of (await this.ctx.storage.list({ prefix: "queue:" })).values()) {
-      if (item.queued_at + QUEUE_TTL_MS > Date.now()) this.sendQueued(server, item);
-    }
-    return new Response(null, { status: 101, webSocket: client });
-  }
-  // MARK: Pairing (called by the Worker's /authorize handlers)
-  async startPairing(info, handleHash) {
-    const ws = this.host();
-    if (!ws) return { offline: true };
-    const now = Date.now();
-    const waiting = [...(await this.ctx.storage.list({ prefix: "pair:" })).values()];
-    if (waiting.filter((r) => r.expiresAt > now).length >= MAX_PAIRINGS) return { busy: true };
-    const id = crypto.randomUUID();
-    const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1e6).padStart(6, "0");
-    const record = { ...info, code, handleHash, state: "pending", expiresAt: now + PAIRING_TTL_MS };
-    await this.ctx.storage.put(`pair:${id}`, record);
-    await this.scheduleCleanup(record.expiresAt);
-    this.sendPairRequest(ws, id, record);
-    return { id, code };
-  }
-  async pairingStatus(id) {
-    const record = await this.ctx.storage.get(`pair:${id}`);
-    if (!record || record.expiresAt <= Date.now()) return "expired";
-    if (record.state === "pending" && !this.host()) return "offline";
-    return record.state;
-  }
-  /** Completes an approved pairing, once, for the consent page it was started from. */
-  async consumePairing(id, handleHash) {
-    const record = await this.ctx.storage.get(`pair:${id}`);
-    if (!record || record.state !== "approved" || record.handleHash !== handleHash || record.expiresAt <= Date.now()) {
-      return null;
-    }
-    await this.ctx.storage.delete(`pair:${id}`);
-    const { client_id, client_name, client_domain, redirect_host, loopback } = record;
-    return { client_id, client_name, client_domain, redirect_host, loopback };
-  }
-  /**
-   * Tells the host its list of clients changed. `added` is a grant just issued: KV lists
-   * can take a minute to include it, so it's remembered here until they do.
-   */
-  async clientsChanged(added) {
-    if (added) await this.ctx.storage.put(`recent:${added.grant_id || added.client_id}`, { ...added, recorded: Date.now() });
-    const ws = this.host();
-    if (ws) await this.sendClients(ws);
-  }
-  sendPairRequest(ws, id, record) {
-    const { code, client_id, client_name, client_domain, redirect_host, loopback } = record;
-    this.send(ws, { type: "pair_request", id, code, client_id, client_name, client_domain, redirect_host, loopback });
-  }
-  async decidePairing(id, allow) {
-    const key = `pair:${id}`;
-    const record = await this.ctx.storage.get(key);
-    if (!record || record.state !== "pending") return;
-    await this.ctx.storage.put(key, { ...record, state: allow ? "approved" : "denied" });
-  }
-  // MARK: Clients
-  async sendClients(ws) {
-    const oauth = await this.oauth();
-    if (!oauth) return;
-    const items = [];
-    const now = Date.now();
-    const revoked = /* @__PURE__ */ new Set();
-    for (const [key, at] of await this.ctx.storage.list({ prefix: "revoked:" })) {
-      if (now - at < REVOKED_KEEP_MS) revoked.add(key.slice("revoked:".length));
-      else await this.ctx.storage.delete(key);
-    }
-    let cursor;
-    do {
-      const page2 = await oauth.listUserGrants(OWNER, { cursor });
-      for (const grant of page2.items) {
-        if (revoked.has(grant.id)) continue;
-        items.push({
-          grant_id: grant.id,
-          client_id: grant.clientId,
-          client_name: grant.metadata?.client_name ?? grant.clientId,
-          client_domain: grant.metadata?.client_domain,
-          created_at: grant.createdAt
-        });
-      }
-      cursor = page2.cursor;
-    } while (cursor);
-    for (const [key, recent] of await this.ctx.storage.list({ prefix: "recent:" })) {
-      const listed = items.some(
-        (item) => recent.grant_id ? item.grant_id === recent.grant_id : item.client_id === recent.client_id
-      );
-      if (listed || revoked.has(recent.grant_id) || now - recent.recorded >= KV_LAG_MS) {
-        await this.ctx.storage.delete(key);
-      } else {
-        const { recorded: _, ...summary } = recent;
-        items.push(summary);
-      }
-    }
-    this.send(ws, { type: "clients", items });
-  }
-  async revokeClient(ws, grantId) {
-    const oauth = await this.oauth();
-    if (!oauth) return;
-    await this.ctx.storage.put(`revoked:${grantId}`, Date.now());
-    for (const [id, p] of this.pending) if (p.grantId === grantId) this.cancel(id, "revoked");
-    await oauth.revokeGrant(grantId, OWNER);
-    for (const [key, item] of await this.ctx.storage.list({ prefix: "queue:" })) {
-      if (item.grant_id === grantId) await this.ctx.storage.delete(key);
-    }
-    await this.sendClients(ws);
-  }
-  // MARK: Offline queue
-  /** Answers from the app's catalog when there is one; otherwise a plain "offline" error. */
-  async offline(request, body) {
-    const clientID = decodeURIComponent(request.headers.get("porchlight-client-id") ?? "");
-    const catalog = clientID ? await this.ctx.storage.get(`catalog:${clientID}`) : void 0;
-    if (catalog) {
-      const path = new URL(request.url).pathname;
-      const answered = await answerOffline(
-        request.method,
-        path,
-        body,
-        catalog,
-        (message) => this.enqueue(request, path, message)
-      );
-      if (answered) return answered;
-    }
-    return offline(body);
-  }
-  async enqueue(request, path, message) {
-    const key = await this.ctx.storage.get("queuekey");
-    if (!key) return null;
-    const plaintext = new TextEncoder().encode(JSON.stringify(message));
-    if (plaintext.length > MAX_QUEUED_BODY) return null;
-    if ((await this.ctx.storage.list({ prefix: "queue:" })).size >= MAX_QUEUED) return null;
-    const id = crypto.randomUUID();
-    const now = Date.now();
-    const header = /* @__PURE__ */ __name((name) => decodeURIComponent(request.headers.get(name) ?? ""), "header");
-    const item = {
-      id,
-      grant_id: header("porchlight-grant-id"),
-      client_id: header("porchlight-client-id"),
-      client_name: header("porchlight-client-name"),
-      path,
-      queued_at: now,
-      sealed: toBase64(await seal(fromBase64(key), plaintext, id))
-    };
-    await this.ctx.storage.put(`queue:${String(now).padStart(13, "0")}-${id}`, item);
-    await this.scheduleCleanup(now + QUEUE_TTL_MS);
-    const ws = this.host();
-    if (ws) this.sendQueued(ws, item);
-    return id;
-  }
-  sendQueued(ws, item) {
-    const { grant_id: _, ...frame } = item;
-    this.send(ws, { type: "queued", ...frame });
-  }
-  async queuedDone(id) {
-    for (const [key, item] of await this.ctx.storage.list({ prefix: "queue:" })) {
-      if (item.id === id) await this.ctx.storage.delete(key);
-    }
-  }
-  async scheduleCleanup(at) {
-    const current = await this.ctx.storage.getAlarm();
-    if (current === null || current > at) await this.ctx.storage.setAlarm(at);
-  }
-  /** Drops expired queued requests and pairings, then waits for the next to expire. */
-  async alarm() {
-    const now = Date.now();
-    let next;
-    for (const [key, item] of await this.ctx.storage.list({ prefix: "queue:" })) {
-      const expires = item.queued_at + QUEUE_TTL_MS;
-      if (expires <= now) await this.ctx.storage.delete(key);
-      else next = Math.min(next ?? expires, expires);
-    }
-    for (const [key, record] of await this.ctx.storage.list({ prefix: "pair:" })) {
-      if (record.expiresAt <= now) await this.ctx.storage.delete(key);
-      else next = Math.min(next ?? record.expiresAt, record.expiresAt);
-    }
-    if (next !== void 0) await this.ctx.storage.setAlarm(next);
-  }
-  async oauth() {
-    const origin = await this.ctx.storage.get("origin");
-    return origin ? oauthApi(origin, this.env) : void 0;
-  }
-  send(ws, frame) {
-    try {
-      ws.send(JSON.stringify(frame));
-    } catch {
-    }
-  }
-  host() {
-    return this.ctx.getWebSockets().find((ws) => ws.readyState === WebSocket.OPEN);
-  }
-  async forward(request) {
-    const grantId = decodeURIComponent(request.headers.get("porchlight-grant-id") ?? "");
-    if (grantId && await this.ctx.storage.get(`revoked:${grantId}`) !== void 0) {
-      return new Response("This connection was revoked", {
-        status: 401,
-        headers: { "www-authenticate": 'Bearer error="invalid_token"' }
-      });
-    }
-    const body = await readBody(request, MAX_REQUEST_BODY);
-    if (!body) return new Response("Request body too large", { status: 413 });
-    const ws = this.host();
-    if (!ws) return this.offline(request, body);
+  /** Sends a request to the host; resolves with its response as soon as that starts. */
+  forward(ws, request, body, grantId2) {
     const url = new URL(request.url);
     const headers = [];
     for (const [name, value] of request.headers) {
@@ -5901,7 +5901,6 @@ var Hub = class extends DurableObject {
     }
     const id = crypto.randomUUID();
     const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         resolve(new Response("Porchlight on the Mac did not respond", { status: 504 }));
@@ -5909,13 +5908,11 @@ var Hub = class extends DurableObject {
       }, START_TIMEOUT_MS);
       this.pending.set(id, {
         ws,
-        grantId,
+        grantId: grantId2,
         started: false,
-        writer,
+        writer: writable.getWriter(),
         timer,
-        start: /* @__PURE__ */ __name((status, headers2) => {
-          resolve(new Response(NULL_BODY_STATUS.has(status) ? null : readable, { status, headers: headers2 }));
-        }, "start")
+        start: /* @__PURE__ */ __name((status, headers2) => resolve(new Response(NULL_BODY_STATUS.has(status) ? null : readable, { status, headers: headers2 })), "start")
       });
       const frame = {
         type: "req",
@@ -5928,78 +5925,49 @@ var Hub = class extends DurableObject {
       try {
         ws.send(JSON.stringify(frame));
       } catch {
-        resolve(offline(body));
+        resolve(hostOffline(body));
         this.finish(id, "send failed");
       }
     });
   }
-  async webSocketMessage(ws, raw) {
-    const frame = parseHostFrame(raw);
-    if (!frame) return;
+  /** A response frame from the host. */
+  receive(frame) {
+    const p = this.pending.get(frame.id);
+    if (!p) return;
     switch (frame.type) {
-      case "pair_decision":
-        return this.decidePairing(frame.id, frame.allow);
-      case "list_clients":
-        return this.sendClients(ws);
-      case "revoke_client":
-        return this.revokeClient(ws, frame.grant_id);
-      case "hello":
-        ws.serializeAttachment({ proto: frame.proto, app_version: frame.app_version });
-        if (frame.queue_key && decodesTo(frame.queue_key, 65)) {
-          await this.ctx.storage.put("queuekey", frame.queue_key);
-        }
-        return;
-      case "offline_catalog":
-        if (frame.catalog) await this.ctx.storage.put(`catalog:${frame.client_id}`, frame.catalog);
-        else await this.ctx.storage.delete(`catalog:${frame.client_id}`);
-        return;
-      case "queued_done":
-        return this.queuedDone(frame.id);
       case "res_start": {
-        const p = this.pending.get(frame.id);
-        if (!p || p.started) return;
-        const headers = new Headers();
-        for (const [name, value] of frame.headers) {
-          if (STRIP_RESPONSE.has(name.toLowerCase())) continue;
-          try {
-            headers.append(name, value);
-          } catch {
-          }
-        }
-        const status = frame.status >= 200 && frame.status <= 599 && frame.status !== 101 ? frame.status : 502;
+        if (p.started) return;
         p.started = true;
         clearTimeout(p.timer);
-        p.start(status, headers);
+        const status = responseStatus(frame.status);
+        p.start(status, responseHeaders(frame.headers));
         if (NULL_BODY_STATUS.has(status)) this.finish(frame.id);
         return;
       }
       case "res_chunk": {
-        const p = this.pending.get(frame.id);
-        if (!p?.started) return;
+        if (!p.started) return;
         let data;
         try {
           data = fromBase64(frame.data_b64);
         } catch {
-          return this.cancel(frame.id);
+          return this.cancel(frame.id, "bad chunk");
         }
         p.writer.write(data).catch(() => this.cancel(frame.id));
         return;
       }
       case "res_end":
-        this.finish(frame.id);
-        return;
+        return this.finish(frame.id);
     }
   }
-  webSocketClose(ws, code, reason) {
-    for (const [id, p] of this.pending) if (p.ws === ws) this.finish(id, "host disconnected");
-    try {
-      ws.close(code, reason);
-    } catch {
-    }
+  /** Ends every request carried by `ws`. */
+  hostGone(ws, reason) {
+    for (const [id, p] of this.pending) if (p.ws === ws) this.finish(id, reason);
   }
-  webSocketError(ws) {
-    for (const [id, p] of this.pending) if (p.ws === ws) this.finish(id, "host error");
+  /** Ends every request a revoked grant has in flight. */
+  cancelGrant(grantId2) {
+    for (const [id, p] of this.pending) if (p.grantId === grantId2) this.cancel(id, "revoked");
   }
+  /** Ends a request here and tells the host to stop working on it. */
   cancel(id, error) {
     const p = this.pending.get(id);
     if (!p) return;
@@ -6009,7 +5977,7 @@ var Hub = class extends DurableObject {
     } catch {
     }
   }
-  /** Close out a request. With an error before the response started, answer 502. */
+  /** Closes out a request. With an error before the response started, answers 502. */
   finish(id, error) {
     const p = this.pending.get(id);
     if (!p) return;
@@ -6029,7 +5997,7 @@ var Hub = class extends DurableObject {
     }
   }
 };
-async function readBody(request, limit) {
+async function readBody(request, limit = MAX_REQUEST_BODY) {
   if (Number(request.headers.get("content-length") ?? 0) > limit) return null;
   if (!request.body) return new Uint8Array();
   const chunks = [];
@@ -6046,36 +6014,178 @@ async function readBody(request, limit) {
     }
     chunks.push(value);
   }
-  const body = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return body;
+  return concat(...chunks);
 }
 __name(readBody, "readBody");
-function decodesTo(b64, length) {
-  try {
-    return fromBase64(b64).length === length;
-  } catch {
-    return false;
-  }
+function responseStatus(status) {
+  return status >= 200 && status <= 599 ? status : 502;
 }
-__name(decodesTo, "decodesTo");
-function offline(body) {
-  let id = null;
-  try {
-    const msg = JSON.parse(new TextDecoder().decode(body));
-    if (msg && typeof msg === "object" && "id" in msg) id = msg.id;
-  } catch {
+__name(responseStatus, "responseStatus");
+function responseHeaders(list) {
+  const headers = new Headers();
+  for (const [name, value] of list) {
+    if (STRIP_RESPONSE.has(name.toLowerCase())) continue;
+    try {
+      headers.append(name, value);
+    } catch {
+    }
   }
-  return Response.json(
-    { jsonrpc: "2.0", id, error: { code: -32001, message: "The Mac running Porchlight is offline" } },
-    { status: 503 }
-  );
+  return headers;
 }
-__name(offline, "offline");
+__name(responseHeaders, "responseHeaders");
+
+// src/hub.ts
+var Hub = class extends DurableObject {
+  static {
+    __name(this, "Hub");
+  }
+  tunnel = new Tunnel();
+  pairings;
+  clients;
+  queue;
+  constructor(ctx, env) {
+    super(ctx, env);
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
+    this.pairings = new Pairings(ctx.storage);
+    this.clients = new Clients(ctx.storage, async () => {
+      const origin = await ctx.storage.get("origin");
+      return origin ? oauthApi(origin, env) : void 0;
+    });
+    this.queue = new OfflineQueue(ctx.storage);
+  }
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === "/host") return this.acceptHost(url.origin);
+    return this.forward(request);
+  }
+  async acceptHost(origin) {
+    for (const old of this.ctx.getWebSockets()) old.close(4e3, "replaced");
+    await this.ctx.storage.put("origin", origin);
+    const { 0: client, 1: server } = new WebSocketPair();
+    this.ctx.acceptWebSocket(server);
+    for (const frame of await this.pairings.pending()) this.send(server, frame);
+    for (const frame of await this.queue.waiting()) this.send(server, { type: "queued", ...frame });
+    return new Response(null, { status: 101, webSocket: client });
+  }
+  // MARK: Called by the Worker's /authorize handlers
+  async startPairing(info, handleHash) {
+    const ws = this.host();
+    if (!ws) return { offline: true };
+    const started = await this.pairings.start(info, handleHash);
+    if (!started) return { busy: true };
+    await this.scheduleAlarm(started.expiresAt);
+    this.send(ws, started.frame);
+    return { id: started.frame.id, code: started.frame.code };
+  }
+  async pairingStatus(id) {
+    const state = await this.pairings.state(id);
+    return state === "pending" && !this.host() ? "offline" : state;
+  }
+  async consumePairing(id, handleHash) {
+    return this.pairings.consume(id, handleHash);
+  }
+  /** Tells the host its list of clients changed; `added` is a grant just issued. */
+  async clientsChanged(added) {
+    if (added) await this.clients.remember(added);
+    const ws = this.host();
+    if (ws) await this.sendClients(ws);
+  }
+  // MARK: Requests from apps
+  async forward(request) {
+    const grantId2 = decodeURIComponent(request.headers.get("porchlight-grant-id") ?? "");
+    if (await this.clients.isRevoked(grantId2)) {
+      return new Response("This connection was revoked", {
+        status: 401,
+        headers: { "www-authenticate": 'Bearer error="invalid_token"' }
+      });
+    }
+    const body = await readBody(request);
+    if (!body) return new Response("Request body too large", { status: 413 });
+    const ws = this.host();
+    return ws ? this.tunnel.forward(ws, request, body, grantId2) : this.answerOffline(request, body, grantId2);
+  }
+  /** Answers from the app's catalog when there is one; otherwise a plain "offline" error. */
+  async answerOffline(request, body, grantId2) {
+    const header = /* @__PURE__ */ __name((name) => decodeURIComponent(request.headers.get(name) ?? ""), "header");
+    const sender = { grantId: grantId2, clientId: header("porchlight-client-id"), clientName: header("porchlight-client-name") };
+    const catalog = await this.queue.catalog(sender.clientId);
+    const path = new URL(request.url).pathname;
+    const answered = catalog && await answerOffline(request.method, path, body, catalog, (message) => this.enqueue(message, path, sender));
+    return answered || hostOffline(body);
+  }
+  async enqueue(message, path, sender) {
+    const frame = await this.queue.add(message, path, sender);
+    if (!frame) return null;
+    await this.scheduleAlarm(frame.queued_at + QUEUE_TTL_MS);
+    const ws = this.host();
+    if (ws) this.send(ws, { type: "queued", ...frame });
+    return frame.id;
+  }
+  // MARK: The host's connection
+  async webSocketMessage(ws, raw) {
+    const frame = parseHostFrame(raw);
+    if (!frame) return;
+    switch (frame.type) {
+      case "hello":
+        if (frame.queue_key) await this.queue.setKey(frame.queue_key);
+        return;
+      case "pair_decision":
+        return this.pairings.decide(frame.id, frame.allow);
+      case "list_clients":
+        return this.sendClients(ws);
+      case "revoke_client":
+        return this.revoke(ws, frame.grant_id);
+      case "offline_catalog":
+        return this.queue.setCatalog(frame.client_id, frame.catalog);
+      case "queued_done":
+        return this.queue.done(frame.id);
+      case "res_start":
+      case "res_chunk":
+      case "res_end":
+        return this.tunnel.receive(frame);
+    }
+  }
+  webSocketClose(ws, code, reason) {
+    this.tunnel.hostGone(ws, "host disconnected");
+    try {
+      ws.close(code, reason);
+    } catch {
+    }
+  }
+  webSocketError(ws) {
+    this.tunnel.hostGone(ws, "host error");
+  }
+  async sendClients(ws) {
+    const items = await this.clients.list();
+    if (items) this.send(ws, { type: "clients", items });
+  }
+  async revoke(ws, grantId2) {
+    await this.clients.revoke(grantId2);
+    this.tunnel.cancelGrant(grantId2);
+    await this.queue.dropGrant(grantId2);
+    await this.sendClients(ws);
+  }
+  send(ws, frame) {
+    try {
+      ws.send(JSON.stringify(frame));
+    } catch {
+    }
+  }
+  host() {
+    return this.ctx.getWebSockets().find((ws) => ws.readyState === WebSocket.OPEN);
+  }
+  // MARK: Expiry
+  /** Drops expired queued requests and pairings, then waits for the next to expire. */
+  async alarm() {
+    const now = Date.now();
+    const next = [await this.queue.expire(now), await this.pairings.expire(now)].filter((at) => at !== void 0);
+    if (next.length > 0) await this.ctx.storage.setAlarm(Math.min(...next));
+  }
+  async scheduleAlarm(at) {
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > at) await this.ctx.storage.setAlarm(at);
+  }
+};
 
 // src/worker.ts
 var providers = /* @__PURE__ */ new Map();

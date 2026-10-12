@@ -3,6 +3,8 @@
 // data. Once sealed, the relay itself can't read them back. The host opens them with
 // CryptoKit (QueueKey.swift); protocol/vectors/queue.json checks the two agree.
 
+import { concat } from "./bytes";
+
 const INFO = new TextEncoder().encode("porchlight-queue-v1");
 const CURVE = { name: "ECDH", namedCurve: "P-256" } as const;
 
@@ -45,14 +47,4 @@ async function aesKey(privateKey: CryptoKey, publicKey: CryptoKey, usages: strin
 		false,
 		usages,
 	);
-}
-
-function concat(...parts: Uint8Array[]): Uint8Array {
-	const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-	let offset = 0;
-	for (const part of parts) {
-		out.set(part, offset);
-		offset += part.length;
-	}
-	return out;
 }

@@ -1,13 +1,27 @@
 // Answers MCP requests while the host is offline, from the catalog it last sent: enough
-// for a client to keep seeing its tools, and to save calls to tools the owner lets queue.
+// for an app to keep seeing its tools, and to save calls to tools the owner lets queue.
 // The only place the relay reads MCP; while the host is online, requests pass through as-is.
 
 import type { Catalog, CatalogPath } from "./protocol";
 
 /** Saves one `tools/call` for the host; resolves to its id, or null if it can't be saved. */
-export type Enqueue = (message: Record<string, unknown>) => Promise<string | null>;
+type Enqueue = (message: Record<string, unknown>) => Promise<string | null>;
 
 type Message = Record<string, unknown>;
+
+const OFFLINE = "The Mac running Porchlight is offline";
+
+/** 503 with a JSON-RPC error, for requests the catalog can't answer: MCP clients show its message. */
+export function hostOffline(body: Uint8Array): Response {
+	let id: unknown = null;
+	try {
+		const message = JSON.parse(new TextDecoder().decode(body));
+		if (message && typeof message === "object" && "id" in message) id = message.id;
+	} catch {
+		// not JSON
+	}
+	return Response.json(rpcError(id, -32001, OFFLINE), { status: 503 });
+}
 
 /** Null when the catalog doesn't cover `path`; the caller then answers as before. */
 export async function answerOffline(
@@ -78,7 +92,7 @@ async function answer(raw: unknown, entry: CatalogPath, catalog: Catalog, enqueu
 			);
 		}
 		default:
-			return rpcError(id, -32001, "The Mac running Porchlight is offline");
+			return rpcError(id, -32001, OFFLINE);
 	}
 }
 

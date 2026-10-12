@@ -8,4 +8,5 @@ export default defineConfig({
 			miniflare: { bindings: { HOST_SECRET: "test-secret" } },
 		}),
 	],
+	test: { setupFiles: ["./test/setup.ts"] },
 });

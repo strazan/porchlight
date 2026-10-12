@@ -197,6 +197,7 @@ Task {
             for clientID in Set(clients.map(\.clientID)) where !clientID.isEmpty {
                 await client.sendOfflineCatalog(clientID: clientID, catalog: await router.offlineCatalog(for: clientID))
             }
+            stderrLog("offline catalogs sent")
         case .queuedFinished(let item, let outcome):
             stderrLog("queued request from \(item.clientName), made \(item.queuedAt.formatted(.relative(presentation: .named))): \(outcome)")
         }

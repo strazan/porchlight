@@ -53,6 +53,11 @@ public enum JSONValue: Codable, Sendable, Hashable {
         return nil
     }
 
+    public var intValue: Int64? {
+        if case .int(let i) = self { return i }
+        return nil
+    }
+
     public static func parse(_ data: Data) throws -> JSONValue {
         try JSONDecoder().decode(JSONValue.self, from: data)
     }

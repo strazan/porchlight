@@ -1,3 +1,4 @@
+import type { Pairing } from "./pairing";
 import type { PairingInfo } from "./protocol";
 
 // Everything about the client (name, domain, redirect host) comes from the client itself,
@@ -5,7 +6,7 @@ import type { PairingInfo } from "./protocol";
 const escape = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 
 const style = `
-:root { color-scheme: light dark; --fg: #1d1d1f; --muted: #6e6e73; --bg: #f5f5f7; --card: #fff; --accent: #e8a33d; --warn: #b25000; }
+:root { color-scheme: light dark; --fg: #1d1d1f; --muted: #6e6e73; --bg: #f5f5f7; --card: #fff; --warn: #b25000; }
 @media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --muted: #a1a1a6; --bg: #1d1d1f; --card: #2c2c2e; --warn: #ffb35c; } }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
@@ -37,8 +38,6 @@ function page(title: string, body: string, script = ""): string {
 ${script ? `<script>${script}</script>` : ""}
 </html>`;
 }
-
-export type Pairing = { id: string; code: string } | { offline: true } | { busy: true };
 
 /**
  * Shows the code the owner will see on their Mac, then polls until they decide and posts

@@ -12,13 +12,13 @@ public struct CloudflareAPI: Sendable {
         }
     }
 
-    public struct KVNamespace: Sendable, Hashable {
-        public let id: String
-        public let title: String
+    struct KVNamespace: Sendable, Hashable {
+        let id: String
+        let title: String
     }
 
     // The trailing slash matters: relative paths resolve under v4/, not in place of it.
-    static let base = URL(string: "https://api.cloudflare.com/client/v4/")!
+    private static let base = URL(string: "https://api.cloudflare.com/client/v4/")!
 
     private let token: String
     private let session: URLSession
@@ -47,8 +47,7 @@ public struct CloudflareAPI: Sendable {
     }
 
     public func accounts() async throws -> [Account] {
-        guard case .array(let items) = try await call("GET", "accounts?per_page=50") else { return [] }
-        return items.compactMap { item in
+        try await list("accounts", perPage: 50).compactMap { item in
             guard let id = item["id"]?.stringValue else { return nil }
             return Account(id: id, name: item["name"]?.stringValue ?? id)
         }
@@ -68,34 +67,33 @@ public struct CloudflareAPI: Sendable {
         return result["subdomain"]?.stringValue ?? name
     }
 
-    public func kvNamespaces(account: String) async throws -> [KVNamespace] {
-        guard case .array(let items) = try await call("GET", "accounts/\(account)/storage/kv/namespaces?per_page=100") else { return [] }
-        return items.compactMap { item in
+    func kvNamespaces(account: String) async throws -> [KVNamespace] {
+        try await list("accounts/\(account)/storage/kv/namespaces", perPage: 100).compactMap { item in
             guard let id = item["id"]?.stringValue, let title = item["title"]?.stringValue else { return nil }
             return KVNamespace(id: id, title: title)
         }
     }
 
-    public func createKVNamespace(account: String, title: String) async throws -> KVNamespace {
+    func createKVNamespace(account: String, title: String) async throws -> KVNamespace {
         let result = try await call("POST", "accounts/\(account)/storage/kv/namespaces", json: .object(["title": .string(title)]))
         guard let id = result["id"]?.stringValue else { throw CloudflareError.unexpectedResponse("KV namespace without an id") }
         return KVNamespace(id: id, title: title)
     }
 
-    public func scriptNames(account: String) async throws -> Set<String> {
+    func scriptNames(account: String) async throws -> Set<String> {
         guard case .array(let items) = try await call("GET", "accounts/\(account)/workers/scripts") else { return [] }
         return Set(items.compactMap { $0["id"]?.stringValue })
     }
 
     /// Uploads an ES module Worker with its metadata (bindings, migrations, …).
-    public func uploadScript(account: String, name: String, module: Data, moduleName: String, metadata: JSONValue) async throws {
+    func uploadScript(account: String, name: String, module: Data, moduleName: String, metadata: JSONValue) async throws {
         var form = MultipartForm()
         form.append(name: "metadata", contentType: "application/json", data: metadata.serialized())
         form.append(name: moduleName, filename: moduleName, contentType: "application/javascript+module", data: module)
         _ = try await call("PUT", "accounts/\(account)/workers/scripts/\(name)", body: form.body, contentType: form.contentType)
     }
 
-    public func enableWorkersDev(account: String, script: String) async throws {
+    func enableWorkersDev(account: String, script: String) async throws {
         _ = try await call(
             "POST", "accounts/\(account)/workers/scripts/\(script)/subdomain",
             json: .object(["enabled": .bool(true), "previews_enabled": .bool(false)])
@@ -109,7 +107,26 @@ public struct CloudflareAPI: Sendable {
     }
 
     private func call(_ method: String, _ path: String, body: Data?, contentType: String?) async throws -> JSONValue {
-        var request = URLRequest(url: URL(string: path, relativeTo: Self.base)!)
+        try await send(method, path, body: body, contentType: contentType)["result"] ?? .null
+    }
+
+    /// Every item of a paged list.
+    private func list(_ path: String, perPage: Int) async throws -> [JSONValue] {
+        var items: [JSONValue] = []
+        for page in 1... {
+            let envelope = try await send("GET", "\(path)?per_page=\(perPage)&page=\(page)", body: nil, contentType: nil)
+            guard case .array(let batch)? = envelope["result"] else { break }
+            items += batch
+            let pages = envelope["result_info"]?["total_pages"]?.intValue ?? 1
+            if batch.isEmpty || page >= pages { break }
+        }
+        return items
+    }
+
+    /// The whole response envelope (`result`, `result_info`, …), once Cloudflare reports success.
+    private func send(_ method: String, _ path: String, body: Data?, contentType: String?) async throws -> JSONValue {
+        guard let url = URL(string: path, relativeTo: Self.base) else { throw CloudflareError.unexpectedResponse("bad path \(path)") }
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let contentType { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
@@ -123,13 +140,12 @@ public struct CloudflareAPI: Sendable {
             var errors: [CloudflareError.Message] = []
             if case .array(let items)? = envelope["errors"] {
                 errors = items.map {
-                    let code: Int = if case .int(let c)? = $0["code"] { Int(c) } else { 0 }
-                    return CloudflareError.Message(code: code, message: $0["message"]?.stringValue ?? "Unknown error")
+                    CloudflareError.Message(code: Int($0["code"]?.intValue ?? 0), message: $0["message"]?.stringValue ?? "Unknown error")
                 }
             }
             throw CloudflareError.api(errors)
         }
-        return envelope["result"] ?? .null
+        return envelope
     }
 }
 
