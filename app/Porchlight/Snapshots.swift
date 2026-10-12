@@ -47,13 +47,14 @@ enum Snapshots {
     private static func catalog() -> [Shot] {
         let obsidian = sample(.everything).servers[0]
         let reminders = sample(.everything).servers[3]
-        let chatgpt = sample(.everything).clients[1]
+        let chatgpt = sample(.everything).apps[1]
         func shot(_ name: String, _ scenario: AppModel.SampleScenario, _ size: CGSize? = nil, _ view: some View) -> Shot {
             Shot(name: name, scenario: scenario, size: size, view: AnyView(view))
         }
         return [
             shot("menu", .everything, nil, MenuContent()),
             shot("menu-first-run", .firstRun, nil, MenuContent()),
+            shot("menu-no-servers", .noServers, nil, MenuContent()),
             shot("menu-waiting", .waitingForToolApproval, nil, MenuContent()),
             shot("menu-off", .switchedOff, nil, MenuContent()),
             shot("settings-servers", .everything, nil, SettingsView(tab: .servers)),
@@ -67,7 +68,7 @@ enum Snapshots {
             shot("editor-url", .everything, nil, ServerEditor(server: obsidian, isNew: false)),
             shot("tool-permissions", .everything, nil, ToolPermissionsView(config: obsidian, policy: .constant(obsidian.toolPolicy))),
             shot("import", .everything, nil, ImportView()),
-            shot("access", .everything, nil, AccessEditor(client: chatgpt)),
+            shot("access", .everything, nil, AccessEditor(app: chatgpt)),
             shot("prompt-approval", .waitingForToolApproval, nil, PromptView()),
             shot("prompt-pairing", .waitingForPairing, nil, PromptView()),
             shot("activity", .everything, CGSize(width: 820, height: 340), ActivityView()),
@@ -85,7 +86,7 @@ enum Snapshots {
             for client in model.clients {
                 await model.icons.load(key: IconStore.key(app: client.clientID), defaultWebsite: client.clientDomain)
             }
-            for request in model.pendingPairings {
+            for request in model.prompts.pairings {
                 if let domain = request.clientDomain { model.icons.learnWebsite(domain, for: IconStore.key(app: request.clientID)) }
                 await model.icons.load(key: IconStore.key(app: request.clientID), defaultWebsite: request.clientDomain)
             }
@@ -104,7 +105,7 @@ enum Snapshots {
         let suite = "porchlight.snapshots.\(key)"
         UserDefaults().removePersistentDomain(forName: suite)
         let store = ServerStore(url: FileManager.default.temporaryDirectory.appending(path: "porchlight-snapshots/\(key).json"))
-        let model = AppModel(defaults: UserDefaults(suiteName: suite)!, store: store, preview: true)
+        let model = AppModel(defaults: UserDefaults(suiteName: suite) ?? .standard, store: store, sampleMode: true)
         model.loadSampleData(scenario)
         models[key] = model
         return model

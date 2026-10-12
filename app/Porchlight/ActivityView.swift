@@ -103,7 +103,7 @@ private struct OutcomeLabel: View {
                 .foregroundStyle(.red)
                 .help(message)
         case .denied(let reason):
-            Label("Declined", systemImage: "hand.raised.fill")
+            Label("Denied", systemImage: "hand.raised.fill")
                 .foregroundStyle(.orange)
                 .help(reason)
         }

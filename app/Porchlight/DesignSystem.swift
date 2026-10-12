@@ -53,6 +53,43 @@ extension UpstreamStatus {
     }
 }
 
+extension AppModel.State {
+    var color: Color {
+        switch self {
+        case .off: .secondary.opacity(0.5)
+        case .starting, .relay(.connecting): .yellow
+        case .relay(.connected): .green
+        case .relay(.disconnected): .red
+        }
+    }
+
+    /// A porch light: on when connected, dim while trying, crossed out on failure.
+    var menuBarSymbol: String {
+        switch self {
+        case .off: "lightbulb"
+        case .starting, .relay(.connecting): "lightbulb.min"
+        case .relay(.connected): "lightbulb.fill"
+        case .relay(.disconnected): "lightbulb.slash"
+        }
+    }
+
+    var isProblem: Bool {
+        if case .relay(.disconnected) = self { return true }
+        return false
+    }
+}
+
+extension AppModel {
+    var statusText: String {
+        switch state {
+        case .off: isConfigured ? "Off" : "Not set up yet"
+        case .starting, .relay(.connecting): "Connecting…"
+        case .relay(.connected): "Connected"
+        case .relay(.disconnected(let reason)): reason
+        }
+    }
+}
+
 struct StatusDot: View {
     let color: Color
     var diameter: CGFloat = 8
@@ -80,7 +117,6 @@ struct StatusDot: View {
 /// A full-width row for the menu bar popover that highlights on hover, like a menu item.
 struct MenuRow: View {
     let title: String
-    var systemImage: String?
     var shortcut: String?
     let action: () -> Void
     @State private var hovering = false
@@ -88,11 +124,6 @@ struct MenuRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if let systemImage {
-                    Image(systemName: systemImage)
-                        .frame(width: 16)
-                        .foregroundStyle(.secondary)
-                }
                 Text(title)
                 Spacer()
                 if let shortcut {
@@ -111,24 +142,19 @@ struct MenuRow: View {
 
 // MARK: - Headers and identity
 
-/// The title block at the top of a sheet or panel.
-struct SheetHeader: View {
+/// The title block at the top of a sheet or panel: an icon, a title, and a line about it.
+struct SheetHeader<Icon: View>: View {
     let title: String
     var subtitle: String?
-    var systemImage: String?
-    var tint: Color = .porchlight
+    @ViewBuilder var icon: Icon
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            if let systemImage {
-                Image(systemName: systemImage)
-                    .font(.title2)
-                    .foregroundStyle(tint)
-                    .frame(width: 32, height: 32)
-                    .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
-            }
+        HStack(alignment: .center, spacing: 12) {
+            icon
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.title3.weight(.semibold))
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
                 if let subtitle {
                     Text(subtitle)
                         .font(.callout)
@@ -139,6 +165,47 @@ struct SheetHeader: View {
             Spacer(minLength: 0)
         }
     }
+}
+
+extension SheetHeader where Icon == SymbolTile {
+    init(title: String, subtitle: String? = nil, systemImage: String, tint: Color = .porchlight) {
+        self.init(title: title, subtitle: subtitle) { SymbolTile(systemImage: systemImage, tint: tint) }
+    }
+}
+
+/// An SF Symbol on a tinted tile, for headers.
+struct SymbolTile: View {
+    let systemImage: String
+    var tint: Color = .porchlight
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.title2)
+            .foregroundStyle(tint)
+            .frame(width: 32, height: 32)
+            .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// Small print under a section or list.
+struct Footnote: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// "1 tool", "3 tools". (Every noun counted in Porchlight's copy has a regular plural.)
+func counted(_ count: Int, _ noun: String) -> String {
+    "\(count) \(count == 1 ? noun : noun + "s")"
 }
 
 /// A round badge with an app's initial, tinted by its name.
@@ -175,6 +242,13 @@ struct Badge: View {
 
 // MARK: - Copying
 
+enum Pasteboard {
+    static func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
 struct CopyButton: View {
     let text: String
     var label: String?
@@ -183,8 +257,7 @@ struct CopyButton: View {
 
     var body: some View {
         Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
+            Pasteboard.copy(text)
             copied = true
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
@@ -201,7 +274,24 @@ struct CopyButton: View {
     }
 }
 
-// MARK: - List bars
+// MARK: - Lists
+
+/// A list in a bordered box with a bar attached underneath, as in System Settings.
+struct ListBox<Content: View, Bar: View>: View {
+    @ViewBuilder var content: Content
+    @ViewBuilder var bar: Bar
+
+    var body: some View {
+        VStack(spacing: 0) {
+            content
+            Divider()
+            bar
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(nsColor: .separatorColor)))
+    }
+}
 
 /// The `+ −` bar attached to the bottom of a list, as in System Settings.
 struct ListBar<Trailing: View>: View {

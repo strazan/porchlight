@@ -99,13 +99,7 @@ struct IconPicker<Preview: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 14) {
-                preview
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.title3.weight(.semibold))
-                    Text("Shown in Porchlight only.").font(.callout).foregroundStyle(.secondary)
-                }
-            }
+            SheetHeader(title: title, subtitle: "Shown in Porchlight only.") { preview }
 
             Picker("Icon", selection: $choice) {
                 Text(defaultWebsite.map { "Automatic (from \($0))" } ?? "Automatic").tag(Choice.automatic)

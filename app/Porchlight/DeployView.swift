@@ -15,11 +15,11 @@ struct DeployView: View {
         case done(URL)
     }
 
-    @State private var stage: Stage
-
     init(stage: Stage = .token) {
         _stage = State(initialValue: stage)
     }
+
+    @State private var stage: Stage
     @State private var token = ""
     @State private var accounts: [CloudflareAPI.Account] = []
     @State private var accountID = ""
@@ -62,7 +62,7 @@ struct DeployView: View {
         }
         .padding(24)
         .frame(width: 520, height: 420)
-        .onAppear { if token.isEmpty { token = model.savedCloudflareToken() } }
+        .onAppear { if token.isEmpty { token = model.savedCloudflareToken } }
     }
 
     // MARK: Steps
@@ -96,7 +96,7 @@ struct DeployView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("This account doesn't have a workers.dev subdomain yet. Choose one; it's part of your relay's address and can't easily be changed.")
             HStack(spacing: 4) {
-                Text("porchlight-relay.").foregroundStyle(.secondary)
+                Text("\(RelayDeployer.defaultScriptName).").foregroundStyle(.secondary)
                 TextField("subdomain", text: $subdomain)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 180)

@@ -30,7 +30,7 @@ final class IconStore {
     }
 
     @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let isPreview: Bool
+    @ObservationIgnored private let isSampleMode: Bool
     @ObservationIgnored private var overrides: [String: Override]
     /// Websites learned from pairing (where an app's access goes), by key.
     @ObservationIgnored private var learnedWebsites: [String: String]
@@ -40,13 +40,13 @@ final class IconStore {
     @ObservationIgnored private var inFlight: [String: Task<Data?, Never>] = [:]
 
     /// Snapshots stay offline unless PORCHLIGHT_SNAPSHOTS_ONLINE is set.
-    private static let previewsMayFetch = ProcessInfo.processInfo.environment["PORCHLIGHT_SNAPSHOTS_ONLINE"] != nil
+    private static let samplesMayFetch = ProcessInfo.processInfo.environment["PORCHLIGHT_SNAPSHOTS_ONLINE"] != nil
     private static let cacheLifetime: TimeInterval = 30 * 24 * 3600
     private static let missingLifetime: TimeInterval = 24 * 3600
 
-    init(defaults: UserDefaults, preview: Bool) {
+    init(defaults: UserDefaults, sampleMode: Bool) {
         self.defaults = defaults
-        isPreview = preview
+        isSampleMode = sampleMode
         fetchFromWebsites = defaults.object(forKey: "iconsFromWebsites") as? Bool ?? true
         overrides = defaults.data(forKey: "iconOverrides").flatMap { try? JSONDecoder().decode([String: Override].self, from: $0) } ?? [:]
         learnedWebsites = defaults.dictionary(forKey: "iconWebsites") as? [String: String] ?? [:]
@@ -111,7 +111,7 @@ final class IconStore {
             images[key] = NSWorkspace.shared.icon(forFile: app.path)
             return
         }
-        guard fetchFromWebsites, !isPreview || Self.previewsMayFetch, let site = website(for: key, default: defaultWebsite) else {
+        guard fetchFromWebsites, !isSampleMode || Self.samplesMayFetch, let site = website(for: key, default: defaultWebsite) else {
             images[key] = nil
             return
         }
@@ -142,6 +142,7 @@ final class IconStore {
         let png = await task.value
         inFlight[cacheKey] = nil
 
+        // A cache: if writing to it fails, the icon is just fetched again next time.
         try? FileManager.default.createDirectory(at: Self.cacheDirectory, withIntermediateDirectories: true)
         guard let png, let image = NSImage(data: png) else {
             missing.insert(cacheKey)

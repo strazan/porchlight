@@ -14,7 +14,7 @@ final class PromptPanel: NSObject, NSWindowDelegate {
         self.model = model
     }
 
-    private var hasPrompts: Bool { !model.pendingPairings.isEmpty || !model.pendingApprovals.isEmpty }
+    private var hasPrompts: Bool { model.prompts.count > 0 }
 
     /// Shows the panel while there's something to answer. It only takes keyboard focus when
     /// the owner asks for it (`focus`): a prompt that pops up while they're typing elsewhere
@@ -63,8 +63,8 @@ final class PromptPanel: NSObject, NSWindowDelegate {
     /// Closing the panel declines what it shows: never grant access by accident. With more
     /// requests waiting, it stays open on the next one.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        switch model.currentPrompt {
-        case .pairing(let request): model.decide(request, allow: false)
+        switch model.prompts.current {
+        case .pairing(let request): model.answer(request, allow: false)
         case .approval(let request): model.answer(request, with: .deny)
         case nil: break
         }
@@ -79,7 +79,7 @@ struct PromptView: View {
     @State private var armed = false
 
     var body: some View {
-        let prompt = model.currentPrompt
+        let prompt = model.prompts.current
         Group {
             switch prompt {
             case .pairing(let request): PairingView(request: request)
@@ -87,11 +87,11 @@ struct PromptView: View {
             case nil: EmptyView()
             }
         }
-        .disabled(!armed && !model.isPreview)
+        .disabled(!armed && !model.isSampleMode)
         .padding(24)
         .frame(width: 440)
         .task(id: prompt?.key) {
-            model.shownPrompt = prompt?.key
+            model.prompts.shown = prompt?.key
             armed = false
             try? await Task.sleep(for: .milliseconds(800))
             armed = true
@@ -111,24 +111,15 @@ private struct PromptLayout<Details: View, Buttons: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center, spacing: 12) {
+            SheetHeader(title: title, subtitle: subtitle) {
                 AppIcon(clientID: clientID, name: appName, size: 40)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.title3.weight(.semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(subtitle)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
             details
             HStack(spacing: 8) {
                 buttons
             }
             .controlSize(.large)
-            let waiting = model.pendingPairings.count + model.pendingApprovals.count - 1
+            let waiting = model.prompts.count - 1
             if waiting > 0 {
                 Text("\(waiting) more waiting")
                     .font(.caption)
@@ -153,7 +144,7 @@ private struct PairingView: View {
         ) {
             VStack(alignment: .leading, spacing: 14) {
                 if request.loopback {
-                    Label("Access goes to an app on this computer. Allow only if you just started connecting from it.", systemImage: "exclamationmark.triangle.fill")
+                    Label("Access goes to an app on this Mac. Allow only if you just started connecting from it.", systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
@@ -179,10 +170,10 @@ private struct PairingView: View {
                 }
             }
         } buttons: {
-            Button("Deny", role: .cancel) { model.decide(request, allow: false) }
+            Button("Deny", role: .cancel) { model.answer(request, allow: false) }
                 .keyboardShortcut(.cancelAction)
             Spacer()
-            Button("Allow") { model.decide(request, allow: true, servers: access) }
+            Button("Allow") { model.answer(request, allow: true, servers: access) }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
         }

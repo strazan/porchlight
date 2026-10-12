@@ -52,7 +52,12 @@ struct ServerEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center, spacing: 12) {
+                SheetHeader(
+                    title: isNew ? "Add Server" : "Edit \(draft.name)",
+                    subtitle: draft.transport == .stdio
+                        ? "A command Porchlight runs on this Mac."
+                        : "A server that's already running on this Mac or your network, like Obsidian's."
+                ) {
                     Button { changingIcon = true } label: {
                         ServerIcon(server: preview, size: 40)
                             .overlay(alignment: .bottomTrailing) {
@@ -65,15 +70,6 @@ struct ServerEditor: View {
                     }
                     .buttonStyle(.plain)
                     .help("Change icon")
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(isNew ? "Add Server" : "Edit \(draft.name)").font(.title3.weight(.semibold))
-                        Text(draft.transport == .stdio
-                            ? "A command Porchlight runs on this Mac."
-                            : "A server that's already running on this Mac, like Obsidian's.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
                 }
                 Picker("Type", selection: $draft.transport) {
                     Text("Command").tag(ServerConfig.Transport.stdio)
@@ -198,7 +194,7 @@ struct ServerEditor: View {
     private var overridesSummary: String {
         let overrides = draft.toolPolicy.overrides
         if overrides.isEmpty { return "No exceptions" }
-        return overrides.count == 1 ? "1 tool set individually" : "\(overrides.count) tools set individually"
+        return "\(counted(overrides.count, "tool")) set individually"
     }
 
     private var nameError: String? {
@@ -247,7 +243,7 @@ struct ServerEditor: View {
         Task {
             switch await model.probe(config) {
             case .success(let found):
-                test = .passed("\(found.serverName) · \(found.tools.count) tool\(found.tools.count == 1 ? "" : "s")")
+                test = .passed("\(found.serverName) · \(counted(found.tools.count, "tool"))")
             case .failure(let error):
                 test = .failed(UpstreamStatus.explain(error.message))
             }
@@ -318,21 +314,6 @@ private struct PairsSection: View {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
         }
-    }
-}
-
-private struct Footnote: View {
-    let text: String
-
-    init(_ text: String) {
-        self.text = text
-    }
-
-    var body: some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

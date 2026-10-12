@@ -60,7 +60,7 @@ struct MenuContent: View {
                 Text("Porchlight").font(.headline)
                 Text(statusLine)
                     .font(.caption)
-                    .foregroundStyle(statusIsProblem ? Color.red : .secondary)
+                    .foregroundStyle(model.state.isProblem ? Color.red : .secondary)
                     .lineLimit(2)
             }
             Spacer()
@@ -74,26 +74,13 @@ struct MenuContent: View {
     }
 
     private var statusLine: String {
-        switch model.state {
-        case .off: model.isConfigured ? "Off" : "Not set up yet"
-        case .starting, .relay(.connecting): "Connecting…"
-        case .relay(.connected):
-            switch model.servers.filter(\.enabled).count {
-            case 0: "Connected · no servers yet"
-            case 1: "Connected · 1 server"
-            case let n: "Connected · \(n) servers"
-            }
-        case .relay(.disconnected(let reason)): reason
-        }
-    }
-
-    private var statusIsProblem: Bool {
-        if case .relay(.disconnected) = model.state { return true }
-        return false
+        guard model.isConnected else { return model.statusText }
+        let enabled = model.servers.filter(\.enabled).count
+        return enabled == 0 ? "Connected · no servers yet" : "Connected · \(counted(enabled, "server"))"
     }
 
     private var waitingSummary: String? {
-        switch model.currentPrompt {
+        switch model.prompts.current {
         case .pairing(let request): return "\(request.clientName) wants to connect"
         case .approval(let request): return "\(request.client.name) wants to use \(request.title ?? request.tool)"
         case nil: break
@@ -253,15 +240,13 @@ private struct ServerMenuRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .contextMenu {
-            Button("Copy URL for \(server.name)") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(url, forType: .string)
-            }
+            Button("Copy URL for \(server.name)") { Pasteboard.copy(url) }
         }
     }
 }
 
-/// The checklist shown until Porchlight is set up.
+/// The checklist shown until Porchlight is set up: a relay, and servers to serve. (The
+/// connected view then shows the connector URL to add to an app.)
 private struct GettingStarted: View {
     @Environment(AppModel.self) private var model
     let open: (SettingsView.Tab) -> Void
@@ -275,7 +260,6 @@ private struct GettingStarted: View {
             VStack(alignment: .leading, spacing: 8) {
                 step(1, "Set up your relay", done: model.isConfigured)
                 step(2, "Add servers", done: !model.servers.isEmpty)
-                step(3, "Connect an app", done: !model.clients.isEmpty)
             }
             Button {
                 open(model.isConfigured ? .servers : .relay)

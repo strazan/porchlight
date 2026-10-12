@@ -50,7 +50,7 @@ struct ToolPermissionsView: View {
 
     private var summary: String {
         let count = Set(policy.overrides.keys).union(policy.offline.keys).count
-        return count == 0 ? "All tools on Default" : count == 1 ? "1 tool set individually" : "\(count) tools set individually"
+        return count == 0 ? "All tools on Default" : "\(counted(count, "tool")) set individually"
     }
 
     private func row(_ tool: ToolSummary) -> some View {

@@ -11,8 +11,6 @@ import UserNotifications
 final class PowerAssertion {
     private var id: IOPMAssertionID?
 
-    var isHeld: Bool { id != nil }
-
     func hold(_ hold: Bool) {
         if hold, id == nil {
             var newID = IOPMAssertionID(0)
