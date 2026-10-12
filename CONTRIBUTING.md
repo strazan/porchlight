@@ -1,6 +1,6 @@
 # Contributing to Porchlight
 
-Thanks for helping out! This covers how the project is put together and how to work on it.
+How the project is put together, and how to work on it.
 
 ## What's where
 
@@ -45,7 +45,7 @@ Run `make relay-bundle` and commit the result.
 
 ### Snapshots
 
-`make snapshots` renders every screen with sample data (it never touches your real
+`make snapshots` renders every screen with sample data (it never touches the real
 settings), for reviewing UI changes without clicking through the app. Variations:
 
 - `PORCHLIGHT_SNAPSHOTS_ONLINE=1`: fetch real app and server icons
@@ -56,7 +56,7 @@ settings), for reviewing UI changes without clicking through the app. Variations
 
 ## Running everything locally
 
-You can run the whole chain on your Mac without Cloudflare:
+The whole chain runs locally, without Cloudflare:
 
 ```sh
 cd relay && npm ci
@@ -88,7 +88,7 @@ it stops and restarts a CLI host around a call made while it's away.
 
 ## Code signing
 
-Builds are signed to run locally by default. To sign with your own Apple Developer team
+Builds are signed to run locally by default. To sign with an Apple Developer team
 (a stable signature, so the Keychain stops asking after every rebuild), create
 `app/Config/Signing.local.xcconfig`. It's gitignored; see `app/Config/Base.xcconfig`.
 

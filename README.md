@@ -3,10 +3,10 @@
 </p>
 
 Claude, ChatGPT and other cloud agents can only reach MCP servers on the public internet,
-but the useful ones run on your Mac: your notes, files, reminders, your home. Porchlight is
-a menu bar app that gives them **one permanent, private URL**, through a small relay in
-**your own Cloudflare account**. Apps sign in with OAuth, you approve each one on your
-Mac, and anything that can change things asks you first.
+but some run on your Mac: notes, files, reminders, home automation. Porchlight is a menu
+bar app that gives cloud agents **one permanent, private URL** for them, through a small
+relay in **your own Cloudflare account**. Apps sign in with OAuth, each one is approved on
+your Mac, and tools that can change things ask first.
 
 ## Install
 
@@ -17,9 +17,9 @@ brew install --cask strazan/tap/porchlight
 ```
 
 Or [download Porchlight](https://github.com/strazan/porchlight/releases/latest/download/Porchlight.zip).
-Then click the lightbulb in the menu bar and choose **Set Up Porchlight…**: deploy your
-relay (a free Cloudflare account is all you need), add your servers, and connect Claude or
-ChatGPT. The [docs](https://porchlight.sh/docs/) walk through it with screenshots.
+Then click the lightbulb in the menu bar and choose **Set Up Porchlight…** to deploy the
+relay (via a free Cloudflare account), add servers, and connect Claude or ChatGPT. The
+[docs](https://porchlight.sh/docs/) cover each step with screenshots.
 
 ## How it works
 
@@ -34,20 +34,21 @@ ChatGPT. The [docs](https://porchlight.sh/docs/) walk through it with screenshot
 3. Porchlight checks what that app may use, asks you if a tool needs approval, and
    forwards the request to the right server. The answer goes back the same way.
 
-The relay is a pipe: it keeps sign-in records, never your files, notes or tool results.
-While your Mac sleeps, calls that only add something (like creating a reminder) wait at
-the relay, encrypted so only your Mac can read them, and run when it's back.
+The relay only passes requests through: it stores sign-in records, never files, notes or
+tool results. While the Mac sleeps, calls that only add something (like creating a
+reminder) wait at the relay, encrypted so only the Mac can read them, and run when it's
+back.
 
 ## Docs
 
-Setup, permissions, the offline queue and security are at
-**[porchlight.sh/docs](https://porchlight.sh/docs/)**. Found a security issue? Please
-report it privately through
-[security advisories](https://github.com/strazan/porchlight/security/advisories/new).
+Setup, permissions, the offline queue and security are covered at
+**[porchlight.sh/docs](https://porchlight.sh/docs/)**. Report security issues privately
+through [security advisories](https://github.com/strazan/porchlight/security/advisories/new)
+(see [SECURITY.md](SECURITY.md)).
 
 ## Contributing
 
-To build from source you need Xcode:
+Building from source requires Xcode:
 
 ```sh
 git clone https://github.com/strazan/porchlight
@@ -55,8 +56,8 @@ cd porchlight
 make app
 ```
 
-[CONTRIBUTING.md](CONTRIBUTING.md) covers how the project is laid out, running everything
-locally, tests and releases. Issues and pull requests are welcome.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the project layout, running everything locally,
+tests and releases.
 
 ## License
 

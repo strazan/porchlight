@@ -1,15 +1,15 @@
 # Security
 
-Porchlight gives cloud agents a way into the MCP servers on your Mac, so we take reports
-seriously.
+Porchlight gives cloud agents access to MCP servers on a Mac, so security reports are a
+priority.
 
 ## Reporting a vulnerability
 
-Please report it privately through
+Report it privately through
 [GitHub security advisories](https://github.com/strazan/porchlight/security/advisories/new),
-not in a public issue. Include what you found, how to reproduce it, and what an attacker
-could do with it. You'll get an answer within a few days, and credit in the release notes
-if you'd like.
+not in a public issue. Include a description, steps to reproduce, and the impact. Reports
+get a response within a few days, and reporters are credited in the release notes on
+request.
 
 ## In scope
 
@@ -18,11 +18,11 @@ if you'd like.
   servers are started and what they're sent
 - The protocol between them (`protocol/PROTOCOL.md`)
 
-Bugs in the MCP servers you add, or in Claude, ChatGPT or Cloudflare themselves, are for
-their own maintainers.
+Vulnerabilities in third-party MCP servers, or in Claude, ChatGPT or Cloudflare, should be
+reported to their maintainers.
 
-## How it's built to be safe
+## Design
 
-The [docs](https://porchlight.sh/docs/#security) describe the design: the relay runs in
-your own Cloudflare account, your Mac only connects out, every app is approved on your Mac,
-and tools that change things ask first.
+The [security docs](https://porchlight.sh/docs/#security) describe the model: the relay
+runs in the owner's Cloudflare account, the Mac only connects outbound, every app is
+approved on the Mac, and tools that change things ask first.
