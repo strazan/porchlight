@@ -10,6 +10,7 @@ enum RelayProtocol {
 
     // Who sent a tunneled request, set by the relay from its OAuth (percent-encoded). The
     // relay drops any `porchlight-*` header an app sends, so apps can't set these.
+    static let loanIDHeader = "porchlight-loan-id"
     static let clientIDHeader = "porchlight-client-id"
     static let clientNameHeader = "porchlight-client-name"
     /// Set on requests saved while the Mac was offline, when they're run (see `RelayClient`).
@@ -63,7 +64,7 @@ enum RelayFrame {
             return .event(.pairingRequested(PairingRequest(
                 id: id, code: code, clientID: frame["client_id"]?.stringValue ?? "",
                 clientName: name, clientDomain: frame["client_domain"]?.stringValue,
-                redirectHost: redirectHost, loopback: frame["loopback"] == .bool(true)
+                redirectHost: redirectHost, loopback: frame["loopback"] == .bool(true), supportsLending: frame["supports_lending"] == .bool(true)
             )))
         case "clients":
             guard case .array(let items)? = frame["items"] else { return .unknown }
@@ -73,7 +74,8 @@ enum RelayFrame {
                     id: grantID, clientID: clientID,
                     clientName: item["client_name"]?.stringValue ?? clientID,
                     clientDomain: item["client_domain"]?.stringValue,
-                    createdAt: Date(timeIntervalSince1970: item["created_at"]?.numberValue ?? 0)
+                    createdAt: Date(timeIntervalSince1970: item["created_at"]?.numberValue ?? 0),
+                    loanID: item["loan_id"]?.stringValue
                 )
             }
             return .event(.clientsChanged(clients))
@@ -85,7 +87,7 @@ enum RelayFrame {
 
 enum HostFrame {
     static func hello(appVersion: String, queueKey: String? = nil) -> String {
-        var frame: [String: JSONValue] = ["type": .string("hello"), "proto": .int(Int64(RelayProtocol.version)), "app_version": .string(appVersion)]
+        var frame: [String: JSONValue] = ["type": .string("hello"), "proto": .int(Int64(RelayProtocol.version)), "app_version": .string(appVersion), "supports_lending": .bool(true)]
         if let queueKey { frame["queue_key"] = .string(queueKey) }
         return encode(frame)
     }
@@ -116,8 +118,10 @@ enum HostFrame {
         encode(["type": .string("res_end"), "id": .string(id)])
     }
 
-    static func pairDecision(id: String, allow: Bool) -> String {
-        encode(["type": .string("pair_decision"), "id": .string(id), "allow": .bool(allow)])
+    static func pairDecision(id: String, allow: Bool, loanID: String? = nil) -> String {
+        var frame: [String: JSONValue] = ["type": .string("pair_decision"), "id": .string(id), "allow": .bool(allow)]
+        if let loanID { frame["loan_id"] = .string(loanID) }
+        return encode(frame)
     }
 
     static let listClients = #"{"type":"list_clients"}"#

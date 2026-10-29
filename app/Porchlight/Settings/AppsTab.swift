@@ -4,7 +4,9 @@ import SwiftUI
 /// The apps with access, and what each may use.
 struct AppsTab: View {
     @Environment(AppModel.self) private var model
+    @State private var showingLoans = true
     @State private var revoking: AppModel.ConnectedApp?
+    @State private var editingLoan: Loan?
     @State private var editingAccess: AppModel.ConnectedApp?
 
     var body: some View {
@@ -53,10 +55,43 @@ struct AppsTab: View {
                 .padding(.horizontal, 4)
                 .padding(.vertical, 2)
             }
+            DisclosureGroup("Friends & Family (\(model.loans.count))", isExpanded: $showingLoans) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Send them your connector URL, have them connect in their AI app, then compare the code and choose ‘Lend to a friend or family member’ on this Mac.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Each connection starts with no tools. Choose individual tools when approving; change them below at any time.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    CopyButton(text: model.endpoint, label: "Copy Connector URL")
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(model.loans) { loan in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(loan.borrower).font(.body.weight(.medium))
+                                        if let connection = model.clients.first(where: { $0.loanID == loan.id }) {
+                                            Text(connection.clientName).font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Text(counted(loan.toolCount, "allowed tool") + " · " + loan.servers.sorted().joined(separator: ", ")).font(.caption)
+                                        Text("Expires \(loan.expiresAt.formatted(date: .abbreviated, time: .shortened))")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Button("Change Access…") { editingLoan = loan }
+                                    Button("Revoke", role: .destructive) { Task { await model.revokeLoan(loan) } }
+                                }
+                            }
+                        }
+                    }.frame(maxHeight: 120)
+                }.padding(.top, 8)
+            }
+            .alert("Borrowed Access", isPresented: Binding(get: { model.lendingError != nil }, set: { if !$0 { model.lendingError = nil } })) {
+                Button("OK") { model.lendingError = nil }
+            } message: { Text(model.lendingError ?? "") }
             Footnote("Apps reach your servers through the relay after you approve them. Revoking an app stops it right away.")
         }
         .padding(20)
         .onAppear { model.refreshClients() }
+        .sheet(item: $editingLoan) { loan in LoanAccessEditor(loan: loan) }
         .sheet(item: $editingAccess) { app in AccessEditor(app: app) }
         .confirmationDialog(
             "Revoke access for \(revoking?.latest.clientName ?? "this app")?",

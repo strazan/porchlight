@@ -44,6 +44,7 @@ struct Harness {
         if let client {
             headers.append((RelayProtocol.clientIDHeader, encode(client.id)))
             headers.append((RelayProtocol.clientNameHeader, encode(client.name)))
+            if let id = client.loanID { headers.append((RelayProtocol.loanIDHeader, encode(id))) }
         }
         if let queuedAt { headers.append((RelayProtocol.queuedAtHeader, queuedAt.formatted(.iso8601))) }
         let recorded = RecordedResponse()

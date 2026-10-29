@@ -14,8 +14,9 @@ public struct PairingRequest: Sendable, Identifiable, Equatable {
     public let redirectHost: String
     /// The tokens go to an app on the owner's Mac.
     public let loopback: Bool
+    public let supportsLending: Bool
 
-    public init(id: String, code: String, clientID: String, clientName: String, clientDomain: String?, redirectHost: String, loopback: Bool) {
+    public init(id: String, code: String, clientID: String, clientName: String, clientDomain: String?, redirectHost: String, loopback: Bool, supportsLending: Bool = false) {
         self.id = id
         self.code = code
         self.clientID = clientID
@@ -23,6 +24,7 @@ public struct PairingRequest: Sendable, Identifiable, Equatable {
         self.clientDomain = clientDomain.map { $0.displayName(limit: 253) }
         self.redirectHost = redirectHost
         self.loopback = loopback
+        self.supportsLending = supportsLending
     }
 
     /// `482 913`
@@ -39,13 +41,15 @@ public struct PairedClient: Sendable, Identifiable, Equatable {
     public let clientName: String
     public let clientDomain: String?
     public let createdAt: Date
+    public let loanID: String?
 
-    public init(id: String, clientID: String, clientName: String, clientDomain: String?, createdAt: Date) {
+    public init(id: String, clientID: String, clientName: String, clientDomain: String?, createdAt: Date, loanID: String? = nil) {
         self.id = id
         self.clientID = clientID
         self.clientName = clientName.displayName()
         self.clientDomain = clientDomain.map { $0.displayName(limit: 253) }
         self.createdAt = createdAt
+        self.loanID = loanID
     }
 }
 

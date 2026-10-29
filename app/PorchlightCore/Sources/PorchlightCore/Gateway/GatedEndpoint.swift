@@ -23,6 +23,21 @@ struct GatedEndpoint: MCPEndpoint {
         var server: String? = if case .server(let name) = scope { name } else { nil }
         var tool: String?
 
+        if client.loanID != nil {
+            guard await router.loanAllows(client, server: server) else {
+                return .rpcError(id: request.rpcID, code: .invalidParams, message: "This loan has expired or been revoked.")
+            }
+            // A tool allowlist does not grant resource, prompt, or arbitrary upstream RPC access.
+            switch method {
+            case "initialize", "ping", "tools/list", "tools/call": break
+            case "resources/list": return .rpcResult(id: request.rpcID, .object(["resources": .array([])]))
+            case "resources/templates/list": return .rpcResult(id: request.rpcID, .object(["resourceTemplates": .array([])]))
+            case "prompts/list": return .rpcResult(id: request.rpcID, .object(["prompts": .array([])]))
+            default:
+                return .rpcError(id: request.rpcID, code: .invalidParams, message: "Borrowed connections can only use their selected tools.")
+            }
+        }
+
         if method == "tools/call" {
             // Every call is checked before it runs: one this can't place never reaches a server.
             guard let name = request["params"]?["name"]?.stringValue else {
@@ -48,12 +63,16 @@ struct GatedEndpoint: MCPEndpoint {
         }
 
         var response = await inner.call(request, onProgress: onProgress)
-        if method == "tools/list" { response = await router.withoutBlockedTools(response, scope: scope) }
+        if method == "tools/list" { response = await router.withoutBlockedTools(response, scope: scope, client: client) }
+        if method == "initialize", client.loanID != nil {
+            response["result"]?["capabilities"] = .object(["tools": .object([:])])
+        }
         await record(method, server, tool, started, response.failure.map(ActivityEvent.Outcome.error) ?? .ok)
         return response
     }
 
     func notify(_ notification: JSONValue) async {
+        guard client.loanID == nil else { return }
         await inner.notify(notification)
     }
 

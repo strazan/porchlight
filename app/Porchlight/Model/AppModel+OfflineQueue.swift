@@ -26,7 +26,7 @@ extension AppModel {
     /// Debounced: servers, permissions and access often change several times in a row.
     func scheduleCatalogPush() {
         guard let router, let client, isConnected else { return }
-        let current = Set(clients.map(\.clientID)).subtracting([""])
+        let current = Set(clients.filter { $0.loanID == nil }.map(\.clientID)).subtracting([""])
         let gone = catalogClients.subtracting(current)
         catalogPush?.cancel()
         catalogPush = Task {

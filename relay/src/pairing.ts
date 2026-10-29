@@ -49,10 +49,10 @@ export class Pairings {
 		return !record || record.expiresAt <= Date.now() ? "expired" : record.state;
 	}
 
-	async decide(id: string, allow: boolean): Promise<void> {
+	async decide(id: string, allow: boolean, loanId?: string): Promise<void> {
 		const record = await this.storage.get<PairingRecord>(PREFIX + id);
 		if (!record || record.state !== "pending") return;
-		await this.storage.put(PREFIX + id, { ...record, state: allow ? "approved" : "denied" });
+		await this.storage.put(PREFIX + id, { ...record, state: allow ? "approved" : "denied", loan_id: allow ? loanId : undefined });
 	}
 
 	/** Completes an approved pairing, once, for the consent page it was started from. */
@@ -62,8 +62,8 @@ export class Pairings {
 			return null;
 		}
 		await this.storage.delete(PREFIX + id);
-		const { client_id, client_name, client_domain, redirect_host, loopback } = record;
-		return { client_id, client_name, client_domain, redirect_host, loopback };
+		const { client_id, client_name, client_domain, redirect_host, loopback, loan_id } = record;
+		return { client_id, client_name, client_domain, redirect_host, loopback, loan_id };
 	}
 
 	/** Deletes expired pairings; returns when the next one expires, if any are left. */
@@ -81,5 +81,5 @@ type PairRequest = Extract<RelayToHost, { type: "pair_request" }>;
 
 function pairRequest(id: string, record: PairingRecord): PairRequest {
 	const { code, client_id, client_name, client_domain, redirect_host, loopback } = record;
-	return { type: "pair_request", id, code, client_id, client_name, client_domain, redirect_host, loopback };
+	return { type: "pair_request", supports_lending: true, id, code, client_id, client_name, client_domain, redirect_host, loopback };
 }

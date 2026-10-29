@@ -5358,6 +5358,7 @@ async function forwardToHost(request, env, ctx) {
   for (const name of [...headers.keys()]) {
     if (name.startsWith("porchlight-")) headers.delete(name);
   }
+  if (ctx.props?.loanId !== void 0) headers.set("porchlight-loan-id", encodeURIComponent(ctx.props.loanId));
   headers.set("porchlight-client-id", encodeURIComponent(clientId));
   headers.set("porchlight-client-name", encodeURIComponent(ctx.props?.clientName ?? ""));
   headers.set("porchlight-grant-id", encodeURIComponent(grantId(ctx.auth?.token)));
@@ -5416,7 +5417,7 @@ async function submitAuthorize(request, env, origin) {
     userId: OWNER,
     metadata: pairing,
     scope: approved.request.scope,
-    props: { clientName: pairing.client_name },
+    props: { clientName: pairing.client_name, loanId: pairing.loan_id },
     // One app can connect several times, e.g. Claude with a connector per server. Clients
     // that identify by a metadata document share one client ID across all of those, so
     // replacing earlier grants would silently log the other connectors out.
@@ -5424,6 +5425,7 @@ async function submitAuthorize(request, env, origin) {
   });
   await hub(env).clientsChanged({
     grant_id: grantId(new URL(redirectTo).searchParams.get("code")),
+    loan_id: pairing.loan_id,
     client_id: pairing.client_id,
     client_name: pairing.client_name,
     client_domain: pairing.client_domain,
@@ -5480,7 +5482,7 @@ function parseHostFrame(raw) {
     case "res_end":
       return typeof m.id === "string" ? m : null;
     case "pair_decision":
-      return typeof m.id === "string" && typeof m.allow === "boolean" ? m : null;
+      return typeof m.id === "string" && typeof m.allow === "boolean" && (m.loan_id === void 0 || typeof m.loan_id === "string" && m.loan_id === m.id) ? m : null;
     case "list_clients":
       return m;
     case "revoke_client":
@@ -5545,6 +5547,7 @@ var Clients = class {
         items.push({
           grant_id: grant.id,
           client_id: grant.clientId,
+          loan_id: grant.metadata?.loan_id,
           client_name: grant.metadata?.client_name ?? grant.clientId,
           client_domain: grant.metadata?.client_domain,
           created_at: grant.createdAt
@@ -5696,10 +5699,10 @@ var Pairings = class {
     const record = await this.storage.get(PREFIX + id);
     return !record || record.expiresAt <= Date.now() ? "expired" : record.state;
   }
-  async decide(id, allow) {
+  async decide(id, allow, loanId) {
     const record = await this.storage.get(PREFIX + id);
     if (!record || record.state !== "pending") return;
-    await this.storage.put(PREFIX + id, { ...record, state: allow ? "approved" : "denied" });
+    await this.storage.put(PREFIX + id, { ...record, state: allow ? "approved" : "denied", loan_id: allow ? loanId : void 0 });
   }
   /** Completes an approved pairing, once, for the consent page it was started from. */
   async consume(id, handleHash) {
@@ -5708,8 +5711,8 @@ var Pairings = class {
       return null;
     }
     await this.storage.delete(PREFIX + id);
-    const { client_id, client_name, client_domain, redirect_host, loopback } = record;
-    return { client_id, client_name, client_domain, redirect_host, loopback };
+    const { client_id, client_name, client_domain, redirect_host, loopback, loan_id } = record;
+    return { client_id, client_name, client_domain, redirect_host, loopback, loan_id };
   }
   /** Deletes expired pairings; returns when the next one expires, if any are left. */
   async expire(now) {
@@ -5723,7 +5726,7 @@ var Pairings = class {
 };
 function pairRequest(id, record) {
   const { code, client_id, client_name, client_domain, redirect_host, loopback } = record;
-  return { type: "pair_request", id, code, client_id, client_name, client_domain, redirect_host, loopback };
+  return { type: "pair_request", supports_lending: true, id, code, client_id, client_name, client_domain, redirect_host, loopback };
 }
 __name(pairRequest, "pairRequest");
 
@@ -6102,6 +6105,12 @@ var Hub = class extends DurableObject {
     const body = await readBody(request);
     if (!body) return new Response("Request body too large", { status: 413 });
     const ws = this.host();
+    if (request.headers.has("porchlight-loan-id")) {
+      if (!ws) return hostOffline(body);
+      if (ws.deserializeAttachment()?.supportsLending !== true) {
+        return new Response("Update Porchlight on the Mac to use borrowed access", { status: 403 });
+      }
+    }
     return ws ? this.tunnel.forward(ws, request, body, grantId2) : this.answerOffline(request, body, grantId2);
   }
   /** Answers from the app's catalog when there is one; otherwise a plain "offline" error. */
@@ -6127,10 +6136,11 @@ var Hub = class extends DurableObject {
     if (!frame) return;
     switch (frame.type) {
       case "hello":
+        ws.serializeAttachment({ supportsLending: frame.supports_lending === true });
         if (frame.queue_key) await this.queue.setKey(frame.queue_key);
         return;
       case "pair_decision":
-        return this.pairings.decide(frame.id, frame.allow);
+        return this.pairings.decide(frame.id, frame.allow, frame.loan_id);
       case "list_clients":
         return this.sendClients(ws);
       case "revoke_client":

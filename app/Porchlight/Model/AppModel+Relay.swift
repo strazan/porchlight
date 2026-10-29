@@ -32,6 +32,7 @@ extension AppModel {
         )
         await router.apply(servers)
         await router.setClientAccess(clientAccess)
+        await router.setLoans(loans)
         await router.warmUp()
         let client = RelayClient(
             url: url,

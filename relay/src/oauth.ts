@@ -15,6 +15,7 @@ export const OWNER = "owner";
 /** Props stored with each grant, available on every request it authorizes. */
 interface GrantProps {
 	clientName: string;
+	loanId?: string;
 }
 
 /**
@@ -55,6 +56,7 @@ async function forwardToHost(
 	for (const name of [...headers.keys()]) {
 		if (name.startsWith("porchlight-")) headers.delete(name);
 	}
+	if (ctx.props?.loanId !== undefined) headers.set("porchlight-loan-id", encodeURIComponent(ctx.props.loanId));
 	headers.set("porchlight-client-id", encodeURIComponent(clientId));
 	headers.set("porchlight-client-name", encodeURIComponent(ctx.props?.clientName ?? ""));
 	// For the Hub only (it doesn't reach the host): what this app queues is dropped with its grant.
@@ -118,7 +120,7 @@ async function submitAuthorize(request: Request, env: Env, origin: string): Prom
 		userId: OWNER,
 		metadata: pairing,
 		scope: approved.request.scope,
-		props: { clientName: pairing.client_name } satisfies GrantProps,
+		props: { clientName: pairing.client_name, loanId: pairing.loan_id } satisfies GrantProps,
 		// One app can connect several times, e.g. Claude with a connector per server. Clients
 		// that identify by a metadata document share one client ID across all of those, so
 		// replacing earlier grants would silently log the other connectors out.
@@ -127,6 +129,7 @@ async function submitAuthorize(request: Request, env: Env, origin: string): Prom
 	// KV listings lag new writes, so tell the hub about this grant directly.
 	await hub(env).clientsChanged({
 		grant_id: grantId(new URL(redirectTo).searchParams.get("code")),
+		loan_id: pairing.loan_id,
 		client_id: pairing.client_id,
 		client_name: pairing.client_name,
 		client_domain: pairing.client_domain,

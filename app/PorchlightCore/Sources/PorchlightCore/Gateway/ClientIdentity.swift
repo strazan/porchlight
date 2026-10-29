@@ -5,16 +5,19 @@ public struct ClientIdentity: Sendable, Equatable {
     /// The OAuth client ID. Empty for requests that didn't come through the relay's OAuth.
     public let id: String
     public let name: String
+    public let loanID: String?
 
-    public init(id: String, name: String) {
+    public init(id: String, name: String, loanID: String? = nil) {
         self.id = id
+        self.loanID = loanID
         self.name = name.displayName()
     }
 
     init(headers request: HTTPRequest) {
         let decode = { (name: String) in request.header(name).flatMap { $0.removingPercentEncoding } ?? "" }
         let name = decode(RelayProtocol.clientNameHeader)
-        self.init(id: decode(RelayProtocol.clientIDHeader), name: name.isEmpty ? "Unknown app" : name)
+        self.init(id: decode(RelayProtocol.clientIDHeader), name: name.isEmpty ? "Unknown app" : name,
+                  loanID: request.header(RelayProtocol.loanIDHeader).map { $0.removingPercentEncoding ?? "" })
     }
 }
 
