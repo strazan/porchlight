@@ -14,7 +14,7 @@ extension AppModel {
     var apps: [ConnectedApp] {
         var order: [String] = []
         var byClient: [String: [PairedClient]] = [:]
-        for client in clients {
+        for client in clients where client.loanID == nil {
             if byClient[client.clientID] == nil { order.append(client.clientID) }
             byClient[client.clientID, default: []].append(client)
         }
@@ -44,7 +44,7 @@ extension AppModel {
 
     func answer(_ request: ToolApprovalRequest, with approval: ToolApproval) {
         guard prompts.resolve(request, with: approval) else { return }
-        if approval == .allowAlways, var server = servers.first(where: { $0.name == request.server }) {
+        if approval == .allowAlways, request.client.loanID == nil, var server = servers.first(where: { $0.name == request.server }) {
             server.toolPolicy.overrides[request.tool] = .allow
             update(server)
             log("Always allowing \(request.tool) on \(request.server)")
@@ -63,6 +63,61 @@ extension AppModel {
         }
         log("\(allow ? "Approved" : "Denied") \(request.clientName)")
         send("answer \(request.clientName)") { await $0.decidePairing(request.id, allow: allow) }
+    }
+
+    /// Persist and install the restriction before issuing the OAuth approval.
+    func lend(_ request: PairingRequest, borrower: String, allowedTools: [String: Set<String>], expiresAt: Date) async -> Bool {
+        let selected = allowedTools.filter { !$0.value.isEmpty }
+        guard request.supportsLending, !borrower.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !selected.isEmpty, expiresAt > Date() else { return false }
+        let loan = Loan(id: request.id, borrower: borrower, servers: Set(selected.keys), expiresAt: expiresAt, allowedTools: selected)
+        do {
+            try await saveLoans(loans.filter { $0.id != loan.id } + [loan])
+        } catch {
+            lendingError = "Couldn't save borrowed access: \(error.localizedDescription)"
+            return false
+        }
+        guard let client, await client.decidePairing(request.id, allow: true, loanID: loan.id) else {
+            lendingError = "The relay disconnected. Reconnect and try approving again."
+            return false
+        }
+        prompts.remove(request)
+        log("Lent access to \(loan.borrower) until \(expiresAt.formatted())")
+        return true
+    }
+
+    func updateLoan(_ loan: Loan, allowedTools: [String: Set<String>]) async -> Bool {
+        // An editor left open must never recreate access that was revoked elsewhere.
+        guard loans.contains(where: { $0.id == loan.id }) else {
+            lendingError = "This loan was revoked. Connect again to lend access."
+            return false
+        }
+        let selected = allowedTools.filter { !$0.value.isEmpty }
+        let updated = Loan(id: loan.id, borrower: loan.borrower, servers: Set(selected.keys),
+                           expiresAt: loan.expiresAt, allowedTools: selected)
+        do { try await saveLoans(loans.map { $0.id == loan.id ? updated : $0 }); return true }
+        catch { lendingError = "Couldn't save tool access: \(error.localizedDescription)"; return false }
+    }
+
+    func lendingTools(on server: ServerConfig) async -> Result<[ToolSummary], ServerProbe.Failure> {
+        #if DEBUG
+        if let sampleProbe { return sampleProbe.map(\.tools) }
+        #endif
+        guard let router else { return .failure(.init(message: "Turn Porchlight on to choose tools.")) }
+        return await router.toolsForLending(on: server.name)
+    }
+
+    func revokeLoan(_ loan: Loan) async {
+        do {
+            try await saveLoans(loans.filter { $0.id != loan.id })
+        } catch {
+            lendingError = "Couldn't revoke borrowed access: \(error.localizedDescription)"
+            return
+        }
+        for connection in clients where connection.loanID == loan.id {
+            send("revoke borrowed access") { await $0.revokeClient(connection.id) }
+        }
+        log("Revoked borrowed access for \(loan.borrower)")
     }
 
     func showPendingPrompt() {

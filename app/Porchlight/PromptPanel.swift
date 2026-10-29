@@ -130,10 +130,23 @@ private struct PromptLayout<Details: View, Buttons: View>: View {
     }
 }
 
-private struct PairingView: View {
+struct PairingView: View {
     @Environment(AppModel.self) private var model
     let request: PairingRequest
     @State private var access: Set<String>?
+    @State private var lending = false
+    @State private var borrower = ""
+    @State private var days = 7
+    @State private var saving = false
+    @State private var allowedTools: [String: Set<String>] = [:]
+
+    init(request: PairingRequest, loan: Loan? = nil) {
+        self.request = request
+        _lending = State(initialValue: loan != nil)
+        _borrower = State(initialValue: loan?.borrower ?? "")
+        _access = State(initialValue: loan?.servers)
+        _allowedTools = State(initialValue: loan?.allowedTools ?? [:])
+    }
 
     var body: some View {
         PromptLayout(
@@ -144,13 +157,13 @@ private struct PairingView: View {
         ) {
             VStack(alignment: .leading, spacing: 14) {
                 if request.loopback {
-                    Label("Access goes to an app on this Mac. Allow only if you just started connecting from it.", systemImage: "exclamationmark.triangle.fill")
+                    Label(lending ? "Access goes to an app on their computer. Confirm they just started connecting from it." : "Access goes to an app on this Mac. Allow only if you just started connecting from it.", systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 VStack(spacing: 6) {
-                    Text("Your browser should show the same code")
+                    Text(lending ? "Ask them to read you the code in their browser" : "Your browser should show the same code")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(request.formattedCode)
@@ -162,10 +175,30 @@ private struct PairingView: View {
                 .padding(.vertical, 12)
                 .background(Color.porchlight.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
 
-                if !request.clientID.isEmpty {
+                if request.supportsLending {
+                    Toggle("Lend to a friend or family member", isOn: $lending)
+                        .onChange(of: lending) { access = lending ? [] : nil }
+                    if lending {
+                        TextField("Their name", text: $borrower)
+                        Picker("Expires after", selection: $days) {
+                            Text("1 day").tag(1)
+                            Text("7 days").tag(7)
+                            Text("30 days").tag(30)
+                        }
+                        Text("Only checked tools are shared with this person’s app connection. Everything starts blocked. Your Mac must be online.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else {
+                    Text("Update the relay in Settings → Relay to lend access.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if lending {
+                    LoanToolPicker(selection: $allowedTools)
+                } else if !request.clientID.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("What it can use").font(.callout.weight(.medium))
-                        ServerAccessPicker(servers: model.servers.filter(\.enabled).map(\.name), selection: $access)
+                        ServerAccessPicker(servers: model.servers.filter(\.enabled).map(\.name), selection: $access, allowsAll: !lending)
                     }
                 }
             }
@@ -173,11 +206,27 @@ private struct PairingView: View {
             Button("Deny", role: .cancel) { model.answer(request, allow: false) }
                 .keyboardShortcut(.cancelAction)
             Spacer()
-            Button("Allow") { model.answer(request, allow: true, servers: access) }
+            Button(lending ? "Lend Access" : "Allow") {
+                if lending {
+                    saving = true
+                    Task {
+                        _ = await model.lend(request, borrower: borrower, allowedTools: allowedTools,
+                                             expiresAt: Date().addingTimeInterval(Double(days) * 86400))
+                        saving = false
+                    }
+                } else {
+                    model.answer(request, allow: true, servers: access)
+                }
+            }
+                .disabled(saving || (lending && (borrower.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || allowedTools.values.allSatisfy(\.isEmpty))))
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
         }
-        .onChange(of: request.id) { access = nil }
+        .disabled(saving)
+        .onChange(of: request.id) { access = nil; lending = false; borrower = ""; days = 7; allowedTools = [:] }
+        .alert("Borrowed Access", isPresented: Binding(get: { model.lendingError != nil }, set: { if !$0 { model.lendingError = nil } })) {
+            Button("OK") { model.lendingError = nil }
+        } message: { Text(model.lendingError ?? "") }
     }
 
     private var origin: String {
@@ -202,8 +251,10 @@ private struct ApprovalView: View {
             Button("Deny", role: .cancel) { model.answer(request, with: .deny) }
                 .keyboardShortcut(.cancelAction)
             Spacer()
-            Button("Always Allow") { model.answer(request, with: .allowAlways) }
-                .help("Stop asking about \(request.tool) on \(request.server). You can change this in the server's settings.")
+            if request.client.loanID == nil {
+                Button("Always Allow") { model.answer(request, with: .allowAlways) }
+                    .help("Stop asking about \(request.tool) on \(request.server). You can change this in the server's settings.")
+            }
             Button("Allow Once") { model.answer(request, with: .allowOnce) }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)

@@ -45,6 +45,7 @@ extension AppModel {
             PairedClient(id: "g1", clientID: "https://claude.ai/oauth/mcp-oauth-client-metadata", clientName: "Claude", clientDomain: "claude.ai", createdAt: now.addingTimeInterval(-3 * 86400)),
             PairedClient(id: "g2", clientID: "dcr-7f3a", clientName: "ChatGPT", clientDomain: nil, createdAt: now.addingTimeInterval(-2 * 3600)),
         ]
+        loans = [Loan(id: "family", borrower: "Sam", servers: ["obsidian"], expiresAt: now.addingTimeInterval(7 * 86400), allowedTools: ["obsidian": ["search"]])]
         clientAccess = ["dcr-7f3a": ["obsidian"]]
         // As a real pairing would: where its access went is where its icon comes from.
         icons.learnWebsite("chatgpt.com", for: IconStore.key(app: "dcr-7f3a"))
@@ -96,6 +97,7 @@ extension AppModel {
 
         switch scenario {
         case .noServers:
+            loans = []
             servers = []
             serverStatus = [:]
             clients = []
@@ -111,7 +113,7 @@ extension AppModel {
         case .waitingForPairing:
             prompts.add(PairingRequest(
                 id: "p1", code: "482913", clientID: "https://chatgpt.com/oauth/client", clientName: "ChatGPT",
-                clientDomain: "chatgpt.com", redirectHost: "chatgpt.com", loopback: false
+                clientDomain: "chatgpt.com", redirectHost: "chatgpt.com", loopback: false, supportsLending: true
             ))
         default:
             break

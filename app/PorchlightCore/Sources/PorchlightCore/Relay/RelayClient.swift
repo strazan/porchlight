@@ -69,8 +69,8 @@ public actor RelayClient {
 
     /// Answers a pairing request from an app's consent page.
     @discardableResult
-    public func decidePairing(_ id: String, allow: Bool) async -> Bool {
-        await send(HostFrame.pairDecision(id: id, allow: allow))
+    public func decidePairing(_ id: String, allow: Bool, loanID: String? = nil) async -> Bool {
+        await send(HostFrame.pairDecision(id: id, allow: allow, loanID: loanID))
     }
 
     /// Asks the relay for the current clients; they arrive as `.clientsChanged`.

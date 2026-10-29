@@ -19,11 +19,13 @@ export interface PairingInfo {
 	redirect_host: string;
 	/** The redirect goes to an app on the user's computer. */
 	loopback: boolean;
+	loan_id?: string;
 }
 
 /** A client that has been granted access. */
 export interface ClientSummary {
 	grant_id: string;
+	loan_id?: string;
 	client_id: string;
 	client_name: string;
 	client_domain?: string;
@@ -66,15 +68,15 @@ export type RelayToHost =
 	| { type: "req"; id: string; method: string; path: string; headers: HeaderList; body_b64: string }
 	| ({ type: "queued" } & QueuedFrame)
 	| { type: "cancel"; id: string }
-	| ({ type: "pair_request"; id: string; code: string } & PairingInfo)
+	| ({ type: "pair_request"; id: string; code: string; supports_lending: true } & PairingInfo)
 	| { type: "clients"; items: ClientSummary[] };
 
 export type HostToRelay =
-	| { type: "hello"; proto: number; app_version: string; queue_key?: string }
+	| { type: "hello"; proto: number; app_version: string; queue_key?: string; supports_lending?: boolean }
 	| { type: "res_start"; id: string; status: number; headers: HeaderList }
 	| { type: "res_chunk"; id: string; data_b64: string }
 	| { type: "res_end"; id: string }
-	| { type: "pair_decision"; id: string; allow: boolean }
+	| { type: "pair_decision"; id: string; allow: boolean; loan_id?: string }
 	| { type: "list_clients" }
 	| { type: "revoke_client"; grant_id: string }
 	| { type: "offline_catalog"; client_id: string; catalog: Catalog | null }
@@ -102,7 +104,9 @@ export function parseHostFrame(raw: string | ArrayBuffer): HostToRelay | null {
 		case "res_end":
 			return typeof m.id === "string" ? (m as HostToRelay) : null;
 		case "pair_decision":
-			return typeof m.id === "string" && typeof m.allow === "boolean" ? (m as HostToRelay) : null;
+			return typeof m.id === "string" && typeof m.allow === "boolean"
+				&& (m.loan_id === undefined || (typeof m.loan_id === "string" && m.loan_id === m.id))
+				? (m as HostToRelay) : null;
 		case "list_clients":
 			return m as HostToRelay;
 		case "revoke_client":

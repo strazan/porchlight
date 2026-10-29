@@ -8,8 +8,10 @@ extension Router {
     }
 
     func authorize(server: String, tool: String, arguments: JSONValue, client: ClientIdentity, queuedAt: Date?) async -> Decision {
+        guard loanAllows(client, server: server, tool: tool) else { return .denied("This tool is not allowed for this connection, or its loan has expired or been revoked.") }
         guard let config = running[server]?.config else { return .denied("\(server) isn't running in Porchlight.") }
         let info = await toolHints(server: server, tool: tool)
+        guard loanAllows(client, server: server, tool: tool) else { return .denied("This tool is not allowed for this connection, or its loan has expired or been revoked.") }
         // A tool the server doesn't list gets the most careful defaults.
         let readOnly = info?.readOnly ?? false
         // The relay saved this call by the catalog it had then; queue settings may have changed since.
@@ -25,11 +27,13 @@ extension Router {
             let request = ToolApprovalRequest(
                 client: client, server: server, tool: tool, title: info?.title, arguments: arguments, queuedAt: queuedAt
             )
-            switch await approve(request) {
+            let approval = await approve(request)
+            guard loanAllows(client, server: server, tool: tool) else { return .denied("This tool is not allowed for this connection, or its loan has expired or been revoked.") }
+            switch approval {
             case .allowOnce:
                 return .allowed
             case .allowAlways:
-                running[server]?.config.toolPolicy.overrides[tool] = .allow
+                if client.loanID == nil { running[server]?.config.toolPolicy.overrides[tool] = .allow }
                 return .allowed
             case .deny:
                 return .denied("The user denied this call to \(tool) on their Mac.")
@@ -38,15 +42,16 @@ extension Router {
     }
 
     /// Drops blocked tools from a `tools/list` response, noting each tool's hints on the way.
-    func withoutBlockedTools(_ response: JSONValue, scope: GatedEndpoint.Scope) async -> JSONValue {
+    func withoutBlockedTools(_ response: JSONValue, scope: GatedEndpoint.Scope, client: ClientIdentity? = nil) async -> JSONValue {
         guard case .array(let tools)? = response["result"]?["tools"] else { return response }
         var kept: [JSONValue] = []
         for tool in tools {
             guard let name = tool["name"]?.stringValue else { continue }
             guard let target = await knownTarget(of: name, in: scope) else {
-                kept.append(tool)
+                if client?.loanID == nil { kept.append(tool) }
                 continue
             }
+            if let client, !loanAllows(client, server: target.server, tool: target.tool) { continue }
             let toolHints = ToolHints(tool)
             hints[target.server, default: [:]][target.tool] = toolHints
             if running[target.server]?.config.toolPolicy.permission(for: target.tool, readOnly: toolHints.readOnly) != .deny {

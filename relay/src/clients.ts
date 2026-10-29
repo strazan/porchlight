@@ -41,6 +41,7 @@ export class Clients {
 				items.push({
 					grant_id: grant.id,
 					client_id: grant.clientId,
+					loan_id: grant.metadata?.loan_id,
 					client_name: grant.metadata?.client_name ?? grant.clientId,
 					client_domain: grant.metadata?.client_domain,
 					created_at: grant.createdAt,

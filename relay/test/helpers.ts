@@ -37,7 +37,7 @@ export function closeHosts() {
 }
 
 /** A fake Porchlight host connected to the relay. */
-export async function connectHost(onRequest: (req: ReqFrame, send: Send) => void = () => {}, queueKey?: string) {
+export async function connectHost(onRequest: (req: ReqFrame, send: Send) => void = () => {}, queueKey?: string, supportsLending = true) {
 	const res = await SELF.fetch(`${ORIGIN}/host`, {
 		headers: { upgrade: "websocket", authorization: "Bearer test-secret", "porchlight-protocol": "1" },
 	});
@@ -58,7 +58,7 @@ export async function connectHost(onRequest: (req: ReqFrame, send: Send) => void
 			waiter.resolve(frame);
 		}
 	});
-	send({ type: "hello", proto: 1, app_version: "test", queue_key: queueKey });
+	send({ type: "hello", proto: 1, app_version: "test", supports_lending: supportsLending, queue_key: queueKey });
 	/** The next frame of `type` matching `where` (or one already received and not yet taken). */
 	function next<T extends RelayToHost["type"]>(
 		type: T,
@@ -160,10 +160,10 @@ export function submit(started: Started, decision: "approve" | "deny") {
 }
 
 /** The whole flow, approved on the (fake) Mac. Returns the client's tokens and its grant. */
-export async function pair(host: Host, clientName = "Test Client", existingClient?: string) {
+export async function pair(host: Host, clientName = "Test Client", existingClient?: string, lending = false) {
 	const started = await startAuthorization(clientName, existingClient);
 	const request = await host.pairRequest(started.pairing);
-	host.send({ type: "pair_decision", id: request.id, allow: true });
+	host.send({ type: "pair_decision", id: request.id, allow: true, loan_id: lending ? request.id : undefined });
 	await expect.poll(() => pairingState(started.pairing)).toBe("approved");
 
 	const approved = await submit(started, "approve");

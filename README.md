@@ -39,6 +39,32 @@ tool results. While the Mac sleeps, calls that only add something (like creating
 reminder) wait at the relay, encrypted so only the Mac can read them, and run when it's
 back.
 
+## Lending to friends and family
+
+In **Settings → Apps → Friends & Family**, copy your connector URL and send it to
+someone you trust. Have them add it to their AI app. Compare the code in their browser
+with the prompt on your Mac, then select **Lend to a friend or family member**. Enter
+their name, check the individual tools they may use, and lend access for 1, 7, or 30 days.
+Nothing is allowed by default.
+
+Each loan applies to that connection only, even if you both use the same AI app.
+Only checked tools appear or run, on both combined and individual server URLs. New
+tools stay blocked, and existing server blocks and approval prompts still apply.
+Resource and prompt endpoints are not shared by a tool loan. For filesystem access,
+share a server configured for just the folder you want them to use, and allow only
+the tools they need. The server itself must enforce the folder boundary.
+
+Revoke a loan at any time in **Friends & Family**, or let it expire. Borrowed access
+requires your Mac to be online and does not use the offline queue. **Change Access…**
+lets you edit each loan’s allowed tools immediately. To renew its expiry, approve a new
+connection. Older loan records without a tool allowlist start with no tools until you
+choose them in **Change Access…**.
+
+Permissions are saved in `~/Library/Application Support/Porchlight/loans.json`,
+readable only by your macOS user. No new account service or database is needed. A
+missing or unreadable loan record grants no access. Update both the app and its relay
+before lending; older relays do not offer the lending option.
+
 ## Docs
 
 Setup, permissions, the offline queue and security are covered at

@@ -55,3 +55,33 @@ extension Router {
         return .object(["initialize": initialize, "tools": .array(tools), "queueable": .array(queueable)])
     }
 }
+
+extension Router {
+    /// Inspect the running connection so choosing tools doesn't start a second server.
+    public func toolsForLending(on server: String) async -> Result<[ToolSummary], ServerProbe.Failure> {
+        guard let upstream = running[server]?.upstream else {
+            return .failure(.init(message: "This server isn't running. Turn Porchlight on to choose tools."))
+        }
+        var tools: [ToolSummary] = []
+        var cursor: JSONValue?
+        var seen: Set<String> = []
+        repeat {
+            let response = await upstream.request(.rpcRequest("tools/list", params: cursor.map { ["cursor": $0] } ?? [:]))
+            guard case .array(let items)? = response["result"]?["tools"] else {
+                return .failure(.init(message: response.failure ?? "The server didn't return a tool list."))
+            }
+            for item in items {
+                guard let name = item["name"]?.stringValue, !tools.contains(where: { $0.name == name }) else { continue }
+                let info = ToolHints(item)
+                hints[server, default: [:]][name] = info
+                tools.append(ToolSummary(name: name, description: item["description"]?.stringValue, hints: info))
+            }
+            cursor = response["result"]?["nextCursor"]
+            if cursor == .null { cursor = nil }
+            if let cursor, !seen.insert(String(decoding: cursor.serialized(), as: UTF8.self)).inserted {
+                return .failure(.init(message: "The server repeated its tool-list cursor."))
+            }
+        } while cursor != nil
+        return .success(tools)
+    }
+}

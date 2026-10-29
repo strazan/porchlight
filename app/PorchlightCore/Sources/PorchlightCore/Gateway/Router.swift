@@ -15,6 +15,7 @@ public actor Router: HTTPHandler {
     var running: [String: (config: ServerConfig, upstream: any Upstream)] = [:]
     /// Enabled servers, in the order they're listed.
     private(set) var order: [String] = []
+    private var loans: [String: Loan] = [:]
     /// Client ID → the servers that app may use. Apps not listed may use all of them.
     private var clientAccess: [String: Set<String>] = [:]
     /// server → tool → its hints, from the servers' tool lists.
@@ -88,9 +89,27 @@ public actor Router: HTTPHandler {
         clientID.isEmpty ? nil : clientAccess[clientID]
     }
 
+    public func setLoans(_ loans: [Loan]) {
+        self.loans = Dictionary(loans.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    func loanAllows(_ client: ClientIdentity, server: String? = nil, tool: String? = nil) -> Bool {
+        guard let id = client.loanID else { return true }
+        guard let loan = loans[id], loan.expiresAt > Date() else { return false }
+        guard let server else { return true }
+        guard loan.servers.contains(server) else { return false }
+        return tool.map { loan.allowedTools[server]?.contains($0) == true } ?? true
+    }
+
     public func handle(_ request: HTTPRequest, _ responder: HTTPResponder) async {
-        let client = ClientIdentity(headers: request)
-        let allowed = allowedServers(for: client.id)
+        var client = ClientIdentity(headers: request)
+        guard loanAllows(client) else {
+            return await responder.respond(403, [("content-type", "text/plain")], body: Data("This loan has expired or been revoked.\n".utf8))
+        }
+        if let id = client.loanID, let loan = loans[id] {
+            client = ClientIdentity(id: client.id, name: "\(loan.borrower) · \(client.name)", loanID: id)
+        }
+        let allowed = client.loanID.flatMap { loans[$0]?.servers } ?? allowedServers(for: client.id)
         let queuedAt = request.header(RelayProtocol.queuedAtHeader).flatMap { try? Date($0, strategy: .iso8601) }
         let route = request.route
         if route == "/mcp" {

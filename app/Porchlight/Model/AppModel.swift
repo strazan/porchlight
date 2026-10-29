@@ -54,6 +54,39 @@ final class AppModel {
         }
     }
 
+    var loans: [Loan] = []
+    var lendingError: String?
+    @ObservationIgnored private var loanStoreReadError: (any Error)?
+    var loanStore: LoanStore { LoanStore(url: store.url.deletingLastPathComponent().appending(path: "loans.json")) }
+
+    func saveLoans(_ updated: [Loan]) async throws {
+        try saveLoansLocally(updated)
+        await router?.setLoans(updated)
+    }
+
+    private func saveLoansLocally(_ updated: [Loan]) throws {
+        // Keep an unreadable file intact for repair; never overwrite it with a new loan.
+        if let loanStoreReadError { throw loanStoreReadError }
+        if !isSampleMode { try loanStore.save(updated) }
+        loans = updated
+    }
+
+    func changeLoanServers(_ transform: (Set<String>) -> Set<String>) -> Bool {
+        let updated = loans.map { loan in
+            var tools: [String: Set<String>] = [:]
+            for (server, names) in loan.allowedTools {
+                for renamed in transform([server]) { tools[renamed, default: []].formUnion(names) }
+            }
+            return Loan(id: loan.id, borrower: loan.borrower, servers: transform(loan.servers), expiresAt: loan.expiresAt, allowedTools: tools)
+        }
+        guard updated != loans else { return true }
+        do { try saveLoansLocally(updated); return true }
+        catch {
+            lendingError = "Couldn't update borrowed access: \(error.localizedDescription)"
+            return false
+        }
+    }
+
     // MARK: State
 
     var servers: [ServerConfig] = []
@@ -118,6 +151,14 @@ final class AppModel {
         clientAccess = (defaults.dictionary(forKey: "clientAccess") as? [String: [String]] ?? [:]).mapValues(Set.init)
         deployment = loadDeployment()
         servers = loadServers()
+        if !sampleMode {
+            do { loans = try loanStore.load() }
+            catch {
+                loanStoreReadError = error
+                lendingError = "Couldn't read loans.json. Borrowed connections have no access. \(error.localizedDescription)"
+                log(lendingError!)
+            }
+        }
         prompts.onChange = { [weak self] in self?.promptPanel.update() }
         guard !sampleMode else { return }
         connectivity = ConnectivityWatcher { [weak self] in self?.connectivityChanged() }

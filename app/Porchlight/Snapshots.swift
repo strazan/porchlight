@@ -48,6 +48,7 @@ enum Snapshots {
         let obsidian = sample(.everything).servers[0]
         let reminders = sample(.everything).servers[3]
         let chatgpt = sample(.everything).apps[1]
+        let lending = sample(.waitingForPairing)
         func shot(_ name: String, _ scenario: AppModel.SampleScenario, _ size: CGSize? = nil, _ view: some View) -> Shot {
             Shot(name: name, scenario: scenario, size: size, view: AnyView(view))
         }
@@ -71,6 +72,9 @@ enum Snapshots {
             shot("access", .everything, nil, AccessEditor(app: chatgpt)),
             shot("prompt-approval", .waitingForToolApproval, nil, PromptView()),
             shot("prompt-pairing", .waitingForPairing, nil, PromptView()),
+            shot("loan-access", .everything, nil, LoanAccessEditor(loan: lending.loans[0])),
+            shot("prompt-lending", .waitingForPairing, nil,
+                 PairingView(request: lending.prompts.pairings[0], loan: lending.loans[0]).padding(24).frame(width: 440)),
             shot("activity", .everything, CGSize(width: 820, height: 340), ActivityView()),
             shot("logs", .everything, CGSize(width: 780, height: 300), LogsView()),
             shot("deploy-token", .firstRun, nil, DeployView()),

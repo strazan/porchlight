@@ -11,18 +11,22 @@ extension AppModel {
     func update(_ server: ServerConfig) {
         guard let index = servers.firstIndex(where: { $0.id == server.id }) else { return }
         let oldName = servers[index].name
-        servers[index] = server
         if oldName != server.name {
+            guard changeLoanServers({ names in
+                names.contains(oldName) ? names.subtracting([oldName]).union([server.name]) : names
+            }) else { return }
             // Apps limited to this server keep access under its new name.
             clientAccess = clientAccess.mapValues { names in
                 names.contains(oldName) ? names.subtracting([oldName]).union([server.name]) : names
             }
         }
+        servers[index] = server
         serversChanged()
     }
 
     func remove(_ ids: Set<ServerConfig.ID>) {
         let removed = Set(servers.filter { ids.contains($0.id) }.map(\.name))
+        guard changeLoanServers({ $0.subtracting(removed) }) else { return }
         servers.removeAll { ids.contains($0.id) }
         clientAccess = clientAccess.mapValues { $0.subtracting(removed) }
         serversChanged()
@@ -122,6 +126,7 @@ extension AppModel {
         routerSync = Task {
             try? await Task.sleep(for: .milliseconds(100))
             guard !Task.isCancelled else { return }
+            await router.setLoans(loans)
             await router.apply(servers)
             await router.setClientAccess(clientAccess)
             await router.warmUp()

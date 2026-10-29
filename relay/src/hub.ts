@@ -89,6 +89,14 @@ export class Hub extends DurableObject<Env> {
 		const body = await readBody(request);
 		if (!body) return new Response("Request body too large", { status: 413 });
 		const ws = this.host();
+		// Loans are checked against the Mac's local file on every request. Never use
+		// the owner's per-app offline catalog, or send one to an older host.
+		if (request.headers.has("porchlight-loan-id")) {
+			if (!ws) return hostOffline(body);
+			if (ws.deserializeAttachment()?.supportsLending !== true) {
+				return new Response("Update Porchlight on the Mac to use borrowed access", { status: 403 });
+			}
+		}
 		return ws ? this.tunnel.forward(ws, request, body, grantId) : this.answerOffline(request, body, grantId);
 	}
 
@@ -120,10 +128,11 @@ export class Hub extends DurableObject<Env> {
 		if (!frame) return;
 		switch (frame.type) {
 			case "hello":
+				ws.serializeAttachment({ supportsLending: frame.supports_lending === true });
 				if (frame.queue_key) await this.queue.setKey(frame.queue_key);
 				return;
 			case "pair_decision":
-				return this.pairings.decide(frame.id, frame.allow);
+				return this.pairings.decide(frame.id, frame.allow, frame.loan_id);
 			case "list_clients":
 				return this.sendClients(ws);
 			case "revoke_client":

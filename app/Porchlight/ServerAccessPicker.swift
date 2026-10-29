@@ -5,18 +5,21 @@ import SwiftUI
 struct ServerAccessPicker: View {
     let servers: [String]
     @Binding var selection: Set<String>?
+    var allowsAll = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Picker("Access", selection: Binding(
-                get: { selection == nil },
-                set: { all in selection = all ? nil : Set(servers) }
-            )) {
-                Text("All servers").tag(true)
-                Text("Only some").tag(false)
+            if allowsAll {
+                Picker("Access", selection: Binding(
+                    get: { selection == nil },
+                    set: { all in selection = all ? nil : Set(servers) }
+                )) {
+                    Text("All servers").tag(true)
+                    Text("Only some").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
 
             if let chosen = selection {
                 if servers.isEmpty {

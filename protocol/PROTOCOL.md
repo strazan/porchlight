@@ -37,8 +37,8 @@ chunks are base64 (`*_b64`) so that frames stay valid JSON.
 |---|---|---|
 | `req` | `id`, `method`, `path`, `headers` (`[[name, value], …]`), `body_b64` | An incoming HTTP request. `path` includes the query string. |
 | `cancel` | `id` | Stop work and send nothing more for `id`: the client went away, its connection was revoked, or a `res_chunk` for it wasn't valid base64. |
-| `pair_request` | `id`, `code`, `client_id`, `client_name`, `client_domain?`, `redirect_host`, `loopback` | An app is on the consent page. Show its details and `code` (the page shows the same code) and answer with `pair_decision`. Re-sent on reconnect while pending; expires after 10 minutes. At most 5 wait at once (anyone can open the consent page); more get a "try again later" page. `client_name` is one plain line of at most 80 characters. |
-| `clients` | `items: [{grant_id, client_id, client_name, client_domain?, created_at}]` | The apps that currently have access. Sent after `list_clients`, after a pairing completes, and after `revoke_client`. |
+| `pair_request` | `id`, `code`, `client_id`, `client_name`, `client_domain?`, `redirect_host`, `loopback`, `supports_lending?` | An app is on the consent page. Show its details and `code` (the page shows the same code) and answer with `pair_decision`. Re-sent on reconnect while pending; expires after 10 minutes. At most 5 wait at once (anyone can open the consent page); more get a "try again later" page. `client_name` is one plain line of at most 80 characters. |
+| `clients` | `items: [{grant_id, client_id, client_name, client_domain?, created_at, loan_id?}]` | The apps that currently have access. Sent after `list_clients`, after a pairing completes, and after `revoke_client`. |
 | `queued` | `id`, `client_id`, `client_name`, `path`, `queued_at` (Unix ms), `sealed` | A request saved while the host was offline (see [Offline queue](#offline-queue)). Sent on connect, oldest first, and again on every connect until `queued_done`. |
 | `pong` | — | Reply to the host's `ping`. |
 
@@ -46,11 +46,11 @@ chunks are base64 (`*_b64`) so that frames stay valid JSON.
 
 | type | fields | meaning |
 |---|---|---|
-| `hello` | `proto`, `app_version`, `queue_key?` | First frame after connecting. `queue_key`: the host's P-256 public key (uncompressed point, base64) that queued requests are sealed to; without it, nothing is queued. |
+| `hello` | `proto`, `app_version`, `queue_key?`, `supports_lending?` | First frame after connecting. `queue_key`: the host's P-256 public key (uncompressed point, base64) that queued requests are sealed to; without it, nothing is queued. |
 | `res_start` | `id`, `status`, `headers` | Begin the response. Exactly once per `req`. |
 | `res_chunk` | `id`, `data_b64` | Part of the response body. Zero or more. |
 | `res_end` | `id` | Response complete. |
-| `pair_decision` | `id`, `allow` | The owner's answer to a `pair_request`. |
+| `pair_decision` | `id`, `allow`, `loan_id?` | The owner's answer to a `pair_request`. For a loan, `loan_id` must equal the pairing `id`. |
 | `list_clients` | — | Ask for a `clients` frame. |
 | `revoke_client` | `grant_id` | Revoke an app's access immediately: the relay refuses the grant's requests from then on (even with a token KV hasn't deleted yet), ends ones in flight, and drops what it queued. |
 | `offline_catalog` | `client_id`, `catalog` (or `null` to forget) | What this app sees while the host is offline. |
@@ -135,3 +135,25 @@ The relay keeps at most 100 saved requests, of up to 256 KB each, for 7 days. Th
 runs each like a live request (same access rules and permissions; the owner may be asked),
 remembers which ids it has finished so a resent one never runs twice, and answers
 `queued_done` once it's handled.
+
+## Borrowed connections
+
+A relay advertising `supports_lending: true` in `pair_request` accepts a `loan_id` in
+`pair_decision`, equal to that pairing's ID. The host saves the named borrower, explicit
+server selection, per-server tool allowlist, and expiry in its local `loans.json` before approving. The relay binds
+the ID to that OAuth grant's metadata and props, including refreshed tokens, and includes
+it in client listings. It is never taken from the consent form or caller headers.
+
+For those grants, the relay sets the percent-encoded `porchlight-loan-id` header after
+stripping caller-supplied `porchlight-*` headers. The host rejects missing, expired, or
+revoked loan records and limits tool listings and calls to the explicit per-server
+allowlist. Other RPC methods and notifications cannot bypass that list. Resource and
+prompt endpoints are not shared. A missing tool allowlist grants no tools. Pending tool
+approvals recheck the loan before running. Borrowed approvals cannot change the global
+tool policy with “Always Allow”. The owner can delete a local loan to deny further
+requests; the app also revokes its associated OAuth grants through `revoke_client`.
+
+Borrowed connections never use per-app offline catalogs or queue calls. The relay only
+forwards them to a connected host that sent `supports_lending: true` in `hello`. That
+capability is stored with the WebSocket attachment so it survives hibernation. Older
+hosts therefore cannot accidentally grant borrowed connections unrestricted access.
